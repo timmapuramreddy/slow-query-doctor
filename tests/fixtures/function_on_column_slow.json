@@ -1,0 +1,76 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Seq Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "students",
+      "Alias": "students",
+      "Startup Cost": 0.0,
+      "Total Cost": 1290.0,
+      "Plan Rows": 250,
+      "Plan Width": 14,
+      "Actual Startup Time": 1.774,
+      "Actual Total Time": 16.726,
+      "Actual Rows": 1,
+      "Actual Loops": 1,
+      "Filter": "(lower((email)::text) = 'student4242@example.edu'::text)",
+      "Rows Removed by Filter": 49999,
+      "Shared Hit Blocks": 540,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning": {
+      "Shared Hit Blocks": 51,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.102,
+    "Triggers": [],
+    "Execution Time": 16.739
+  },
+  "catalog": {
+    "students": {
+      "rows": 50000,
+      "columns": [
+        "id",
+        "first_name",
+        "last_name",
+        "email",
+        "birth_date",
+        "enrolled_on",
+        "status"
+      ],
+      "indexes": [
+        {
+          "name": "students_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_pkey ON public.students USING btree (id)"
+        },
+        {
+          "name": "students_email_idx",
+          "columns": [
+            "email"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_email_idx ON public.students USING btree (email)"
+        }
+      ]
+    }
+  }
+}

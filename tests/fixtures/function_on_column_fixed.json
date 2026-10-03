@@ -1,0 +1,78 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Index Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Scan Direction": "Forward",
+      "Index Name": "students_email_idx",
+      "Relation Name": "students",
+      "Alias": "students",
+      "Startup Cost": 0.41,
+      "Total Cost": 8.43,
+      "Plan Rows": 1,
+      "Plan Width": 14,
+      "Actual Startup Time": 0.037,
+      "Actual Total Time": 0.038,
+      "Actual Rows": 1,
+      "Actual Loops": 1,
+      "Index Cond": "((email)::text = 'Student4242@example.edu'::text)",
+      "Rows Removed by Index Recheck": 0,
+      "Shared Hit Blocks": 4,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning": {
+      "Shared Hit Blocks": 6,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.055,
+    "Triggers": [],
+    "Execution Time": 0.049
+  },
+  "catalog": {
+    "students": {
+      "rows": 50000,
+      "columns": [
+        "id",
+        "first_name",
+        "last_name",
+        "email",
+        "birth_date",
+        "enrolled_on",
+        "status"
+      ],
+      "indexes": [
+        {
+          "name": "students_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_pkey ON public.students USING btree (id)"
+        },
+        {
+          "name": "students_email_idx",
+          "columns": [
+            "email"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_email_idx ON public.students USING btree (email)"
+        }
+      ]
+    }
+  }
+}

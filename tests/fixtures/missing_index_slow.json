@@ -1,0 +1,128 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Sort",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 12578.77,
+      "Total Cost": 12578.78,
+      "Plan Rows": 4,
+      "Plan Width": 11,
+      "Actual Startup Time": 46.053,
+      "Actual Total Time": 46.287,
+      "Actual Rows": 3,
+      "Actual Loops": 1,
+      "Sort Key": [
+        "class_date"
+      ],
+      "Sort Method": "quicksort",
+      "Sort Space Used": 25,
+      "Sort Space Type": "Memory",
+      "Shared Hit Blocks": 3727,
+      "Shared Read Blocks": 2646,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Gather",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 1000.0,
+          "Total Cost": 12578.73,
+          "Plan Rows": 4,
+          "Plan Width": 11,
+          "Actual Startup Time": 20.591,
+          "Actual Total Time": 46.167,
+          "Actual Rows": 3,
+          "Actual Loops": 1,
+          "Workers Planned": 2,
+          "Workers Launched": 2,
+          "Single Copy": false,
+          "Shared Hit Blocks": 3724,
+          "Shared Read Blocks": 2646,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Seq Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": true,
+              "Async Capable": false,
+              "Relation Name": "attendance",
+              "Alias": "attendance",
+              "Startup Cost": 0.0,
+              "Total Cost": 11578.33,
+              "Plan Rows": 2,
+              "Plan Width": 11,
+              "Actual Startup Time": 21.712,
+              "Actual Total Time": 29.469,
+              "Actual Rows": 1,
+              "Actual Loops": 3,
+              "Filter": "(enrollment_id = 4242)",
+              "Rows Removed by Filter": 333332,
+              "Shared Hit Blocks": 3724,
+              "Shared Read Blocks": 2646,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Workers": []
+            }
+          ]
+        }
+      ]
+    },
+    "Planning": {
+      "Shared Hit Blocks": 77,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 1.147,
+    "Triggers": [],
+    "Execution Time": 46.44
+  },
+  "catalog": {
+    "attendance": {
+      "rows": 1000000,
+      "columns": [
+        "id",
+        "enrollment_id",
+        "class_date",
+        "status"
+      ],
+      "indexes": [
+        {
+          "name": "attendance_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX attendance_pkey ON public.attendance USING btree (id)"
+        }
+      ]
+    }
+  }
+}

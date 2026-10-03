@@ -1,0 +1,135 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Sort",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 20.25,
+      "Total Cost": 20.26,
+      "Plan Rows": 4,
+      "Plan Width": 11,
+      "Actual Startup Time": 0.082,
+      "Actual Total Time": 0.082,
+      "Actual Rows": 3,
+      "Actual Loops": 1,
+      "Sort Key": [
+        "class_date"
+      ],
+      "Sort Method": "quicksort",
+      "Sort Space Used": 25,
+      "Sort Space Type": "Memory",
+      "Shared Hit Blocks": 5,
+      "Shared Read Blocks": 4,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Bitmap Heap Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Relation Name": "attendance",
+          "Alias": "attendance",
+          "Startup Cost": 4.46,
+          "Total Cost": 20.21,
+          "Plan Rows": 4,
+          "Plan Width": 11,
+          "Actual Startup Time": 0.045,
+          "Actual Total Time": 0.055,
+          "Actual Rows": 3,
+          "Actual Loops": 1,
+          "Recheck Cond": "(enrollment_id = 4242)",
+          "Rows Removed by Index Recheck": 0,
+          "Exact Heap Blocks": 3,
+          "Lossy Heap Blocks": 0,
+          "Shared Hit Blocks": 2,
+          "Shared Read Blocks": 4,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Bitmap Index Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Index Name": "attendance_enrollment_id_idx",
+              "Startup Cost": 0.0,
+              "Total Cost": 4.46,
+              "Plan Rows": 4,
+              "Plan Width": 0,
+              "Actual Startup Time": 0.032,
+              "Actual Total Time": 0.032,
+              "Actual Rows": 3,
+              "Actual Loops": 1,
+              "Index Cond": "(enrollment_id = 4242)",
+              "Shared Hit Blocks": 0,
+              "Shared Read Blocks": 3,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            }
+          ]
+        }
+      ]
+    },
+    "Planning": {
+      "Shared Hit Blocks": 91,
+      "Shared Read Blocks": 1,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.368,
+    "Triggers": [],
+    "Execution Time": 0.186
+  },
+  "catalog": {
+    "attendance": {
+      "rows": 1000000,
+      "columns": [
+        "id",
+        "enrollment_id",
+        "class_date",
+        "status"
+      ],
+      "indexes": [
+        {
+          "name": "attendance_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX attendance_pkey ON public.attendance USING btree (id)"
+        },
+        {
+          "name": "attendance_enrollment_id_idx",
+          "columns": [
+            "enrollment_id"
+          ],
+          "definition": "CREATE INDEX attendance_enrollment_id_idx ON public.attendance USING btree (enrollment_id)"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Bitmap Heap Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "students",
+      "Alias": "students",
+      "Startup Cost": 10.35,
+      "Total Cost": 453.95,
+      "Plan Rows": 250,
+      "Plan Width": 14,
+      "Actual Startup Time": 0.049,
+      "Actual Total Time": 0.049,
+      "Actual Rows": 1,
+      "Actual Loops": 1,
+      "Recheck Cond": "(lower((email)::text) = 'student4242@example.edu'::text)",
+      "Rows Removed by Index Recheck": 0,
+      "Exact Heap Blocks": 1,
+      "Lossy Heap Blocks": 0,
+      "Shared Hit Blocks": 1,
+      "Shared Read Blocks": 3,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Bitmap Index Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Index Name": "students_lower_email_idx",
+          "Startup Cost": 0.0,
+          "Total Cost": 10.29,
+          "Plan Rows": 250,
+          "Plan Width": 0,
+          "Actual Startup Time": 0.043,
+          "Actual Total Time": 0.043,
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Index Cond": "(lower((email)::text) = 'student4242@example.edu'::text)",
+          "Shared Hit Blocks": 0,
+          "Shared Read Blocks": 3,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        }
+      ]
+    },
+    "Planning": {
+      "Shared Hit Blocks": 64,
+      "Shared Read Blocks": 1,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.192,
+    "Triggers": [],
+    "Execution Time": 0.062
+  },
+  "catalog": {
+    "students": {
+      "rows": 50000,
+      "columns": [
+        "id",
+        "first_name",
+        "last_name",
+        "email",
+        "birth_date",
+        "enrolled_on",
+        "status"
+      ],
+      "indexes": [
+        {
+          "name": "students_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_pkey ON public.students USING btree (id)"
+        },
+        {
+          "name": "students_email_idx",
+          "columns": [
+            "email"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_email_idx ON public.students USING btree (email)"
+        },
+        {
+          "name": "students_lower_email_idx",
+          "columns": [
+            null
+          ],
+          "definition": "CREATE INDEX students_lower_email_idx ON public.students USING btree (lower((email)::text))"
+        }
+      ]
+    }
+  }
+}
