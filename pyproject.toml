@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "slow-query-doctor"
+version = "0.1.0"
+description = "Explains why a SQL query is slow in plain words and proves the fix with timings."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = ["psycopg[binary]>=3.2,<4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "black>=24"]
+
+[project.scripts]
+sqd = "sqd.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sqd = ["sql/*.sql"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs the sqd-postgres database (SQD_DATABASE_URL)"]

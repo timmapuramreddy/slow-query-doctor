@@ -1,0 +1,17 @@
+# Local demo database for Slow Query Doctor.
+# Start: docker compose up -d   (reads SQD_PG_PASSWORD from .env)
+services:
+  postgres:
+    image: postgres:17
+    container_name: sqd-postgres
+    environment:
+      POSTGRES_USER: sqd
+      POSTGRES_DB: school
+      POSTGRES_PASSWORD: ${SQD_PG_PASSWORD:?set SQD_PG_PASSWORD in .env}
+    ports:
+      - "5434:5432"
+    volumes:
+      - sqd-pgdata:/var/lib/postgresql/data
+
+volumes:
+  sqd-pgdata:
