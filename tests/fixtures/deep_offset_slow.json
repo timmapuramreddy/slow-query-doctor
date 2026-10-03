@@ -1,0 +1,92 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Limit",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 16176.92,
+      "Total Cost": 16177.57,
+      "Plan Rows": 20,
+      "Plan Width": 19,
+      "Actual Startup Time": 61.167,
+      "Actual Total Time": 61.17,
+      "Actual Rows": 20,
+      "Actual Loops": 1,
+      "Shared Hit Blocks": 4554,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Index Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Scan Direction": "Forward",
+          "Index Name": "attendance_pkey",
+          "Relation Name": "attendance",
+          "Alias": "attendance",
+          "Startup Cost": 0.42,
+          "Total Cost": 32353.42,
+          "Plan Rows": 1000000,
+          "Plan Width": 19,
+          "Actual Startup Time": 0.022,
+          "Actual Total Time": 45.932,
+          "Actual Rows": 500020,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 4554,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        }
+      ]
+    },
+    "Planning": {
+      "Shared Hit Blocks": 37,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.069,
+    "Triggers": [],
+    "Execution Time": 61.178
+  },
+  "catalog": {
+    "attendance": {
+      "rows": 1000000,
+      "columns": [
+        "id",
+        "enrollment_id",
+        "class_date",
+        "status"
+      ],
+      "indexes": [
+        {
+          "name": "attendance_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX attendance_pkey ON public.attendance USING btree (id)"
+        }
+      ]
+    }
+  }
+}

@@ -113,3 +113,54 @@ def function_calls(expression: str) -> list[tuple[str, str]]:
             pos += 1
         calls.append((match.group(1), text[start : pos - 1]))
     return calls
+
+
+# Column (optionally cast) followed by LIKE (~~) or ILIKE (~~*) and a pattern starting with % or _.
+_LEADING_WILDCARD = re.compile(
+    r"\b([a-z_][a-z0-9_]*)\)?(?:::[a-z ]+?)?\s+~~\*?\s+'([%_](?:[^']|'')*)'"
+)
+
+
+def leading_wildcard_columns(expression: str, columns: list[str]) -> list[tuple[str, str]]:
+    """(column, pattern) for each LIKE / ILIKE whose pattern starts with a wildcard.
+
+    Example: "((email)::text ~~ '%4242@example.edu'::text)" -> [("email", "%4242@example.edu")].
+    """
+    known = set(columns)
+    return [
+        (m.group(1), m.group(2))
+        for m in _LEADING_WILDCARD.finditer(expression)
+        if m.group(1) in known
+    ]
+
+
+# Date functions that hide a date/time column from its index. Shared by rules 2 and 5.
+DATE_FUNCTIONS = frozenset({"date_trunc", "date_part", "date"})
+
+_EXTRACT = re.compile(r"\bextract\(\s*\w+\s+from\s+([^)]*)\)", re.I)
+_DATE_CAST = re.compile(
+    r"\(?(?:[a-z_][a-z0-9_]*\.)?([a-z_][a-z0-9_]*)\)?"
+    r"::(date|timestamp(?: with(?:out)? time zone)?)\b"
+)
+
+
+def date_wrapped_columns(expression: str, columns: list[str]) -> list[tuple[str, str]]:
+    """(column, wrapper) for each column inside a date function, EXTRACT, or a cast to a date type.
+
+    Example: "((graded_at)::date = '2024-03-15'::date)" -> [("graded_at", "::date")].
+    """
+    text = strip_literals(expression)
+    found: list[tuple[str, str]] = []
+    for func, args in function_calls(text):
+        if func in DATE_FUNCTIONS:
+            found += [(col, f"{func}()") for col in referenced_columns(args, columns)]
+    for match in _EXTRACT.finditer(text):
+        found += [(col, "EXTRACT()") for col in referenced_columns(match.group(1), columns)]
+    for match in _DATE_CAST.finditer(text):
+        if match.group(1) in columns:
+            found.append((match.group(1), f"::{match.group(2)}"))
+    unique: list[tuple[str, str]] = []
+    for item in found:
+        if item not in unique:
+            unique.append(item)
+    return unique

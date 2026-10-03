@@ -127,8 +127,141 @@ def test_function_on_column_leaves_date_functions_to_their_own_rule():
         }
     )
     plan = _seq_scan("(date_trunc('month'::text, (enrolled_on)::timestamp) = '2024-01-01')")
-    assert run_rules(plan, catalog) == []
+    assert [f.rule_id for f in run_rules(plan, catalog)] == ["non-sargable-date-filter"]
 
 
 def test_function_on_literal_is_not_flagged():
     assert run_rules(_seq_scan("((email)::text = lower('A@B.EDU'::text))"), _catalog()) == []
+
+
+# Rule 3: leading wildcard
+
+
+def test_leading_wildcard_fires_on_real_slow_plan(fixture_loader):
+    plan, catalog = fixture_loader("leading_wildcard_slow")
+    findings = run_rules(plan, catalog)
+    assert [f.rule_id for f in findings] == ["leading-wildcard"]
+    assert findings[0].title == "Leading wildcard '%4242@example.edu' on students.email"
+    assert "USING gin (email gin_trgm_ops)" in findings[0].suggestion
+
+
+def test_leading_wildcard_silent_after_trigram_index(fixture_loader):
+    plan, catalog = fixture_loader("leading_wildcard_after_fix")
+    assert run_rules(plan, catalog) == []
+
+
+def test_leading_wildcard_silent_when_seq_scan_already_has_trigram_index():
+    indexes = [
+        {
+            "name": "students_first_name_trgm_idx",
+            "columns": ["first_name"],
+            "definition": "CREATE INDEX students_first_name_trgm_idx ON students "
+            "USING gin (first_name gin_trgm_ops)",
+        }
+    ]
+    plan = _seq_scan("(first_name ~~* '%sha'::text)")
+    assert run_rules(plan, _catalog(indexes=indexes)) == []
+
+
+def test_leading_wildcard_on_unindexed_column_does_not_suggest_btree_index():
+    findings = run_rules(_seq_scan("(first_name ~~* '_sha%'::text)"), _catalog())
+    assert [f.rule_id for f in findings] == ["leading-wildcard"]
+
+
+def test_trailing_wildcard_is_not_flagged():
+    findings = run_rules(_seq_scan("(first_name ~~ 'Ash%'::text)"), _catalog())
+    assert [f.rule_id for f in findings] == ["missing-index"]
+
+
+# Rule 4: deep OFFSET
+
+
+def _limit(returned: int, produced: int) -> dict:
+    return {
+        "Plan": {
+            "Node Type": "Limit",
+            "Actual Rows": returned,
+            "Actual Loops": 1,
+            "Actual Total Time": 90.0,
+            "Plans": [
+                {
+                    "Node Type": "Sort",
+                    "Actual Rows": produced,
+                    "Actual Loops": 1,
+                    "Actual Total Time": 80.0,
+                }
+            ],
+        }
+    }
+
+
+def test_deep_offset_fires_on_real_slow_plan(fixture_loader):
+    plan, catalog = fixture_loader("deep_offset_slow")
+    findings = run_rules(plan, catalog)
+    assert [f.rule_id for f in findings] == ["deep-offset"]
+    assert findings[0].title == "Deep OFFSET: read 500,020 rows to return 20"
+
+
+def test_deep_offset_silent_for_keyset_rewrite(fixture_loader):
+    plan, catalog = fixture_loader("deep_offset_fixed")
+    assert run_rules(plan, catalog) == []
+
+
+def test_deep_offset_silent_for_shallow_offset():
+    assert run_rules(_limit(returned=20, produced=1_020), _catalog()) == []
+
+
+def test_deep_offset_fires_over_a_sort():
+    findings = run_rules(_limit(returned=50, produced=200_050), _catalog())
+    assert [f.rule_id for f in findings] == ["deep-offset"]
+    assert findings[0].node == "Limit over Sort"
+
+
+# Rule 5: non-sargable date filter
+
+
+def _date_column_catalog(indexed: bool = True) -> Catalog:
+    indexes = [{"name": "g", "columns": ["graded_at"], "definition": "(graded_at)"}]
+    return Catalog.from_dict(
+        {
+            "students": {
+                "rows": 600_000,
+                "columns": ["id", "graded_at"],
+                "indexes": indexes if indexed else [],
+            }
+        }
+    )
+
+
+def test_date_filter_fires_on_real_slow_plan(fixture_loader):
+    plan, catalog = fixture_loader("date_filter_slow")
+    findings = run_rules(plan, catalog)
+    assert [f.rule_id for f in findings] == ["non-sargable-date-filter"]
+    assert findings[0].title.startswith("date_trunc() on grades.graded_at")
+
+
+def test_date_filter_silent_for_range_rewrite(fixture_loader):
+    plan, catalog = fixture_loader("date_filter_fixed")
+    assert run_rules(plan, catalog) == []
+
+
+def test_date_filter_fires_on_cast_to_date():
+    plan = _seq_scan("((graded_at)::date = '2024-03-15'::date)")
+    findings = run_rules(plan, _date_column_catalog())
+    assert [f.title for f in findings] == [
+        "::date on students.graded_at turns a date range into a full scan"
+    ]
+
+
+def test_date_filter_fires_on_extract():
+    plan = _seq_scan("(EXTRACT(year FROM graded_at) = '2024'::numeric)")
+    assert [f.rule_id for f in run_rules(plan, _date_column_catalog())] == [
+        "non-sargable-date-filter"
+    ]
+
+
+def test_date_filter_on_unindexed_column_suggests_index_and_skips_missing_index_rule():
+    plan = _seq_scan("((graded_at)::date = '2024-03-15'::date)")
+    findings = run_rules(plan, _date_column_catalog(indexed=False))
+    assert [f.rule_id for f in findings] == ["non-sargable-date-filter"]
+    assert findings[0].suggestion.endswith("CREATE INDEX ON students (graded_at);")

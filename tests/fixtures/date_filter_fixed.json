@@ -1,0 +1,104 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Bitmap Heap Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "grades",
+      "Alias": "grades",
+      "Startup Cost": 25.4,
+      "Total Cost": 2210.32,
+      "Plan Rows": 876,
+      "Plan Width": 21,
+      "Actual Startup Time": 0.133,
+      "Actual Total Time": 0.987,
+      "Actual Rows": 803,
+      "Actual Loops": 1,
+      "Recheck Cond": "((graded_at >= '2024-03-15 00:00:00+00'::timestamp with time zone) AND (graded_at < '2024-03-16 00:00:00+00'::timestamp with time zone))",
+      "Rows Removed by Index Recheck": 0,
+      "Exact Heap Blocks": 732,
+      "Lossy Heap Blocks": 0,
+      "Shared Hit Blocks": 738,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Bitmap Index Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Index Name": "grades_graded_at_idx",
+          "Startup Cost": 0.0,
+          "Total Cost": 25.19,
+          "Plan Rows": 876,
+          "Plan Width": 0,
+          "Actual Startup Time": 0.081,
+          "Actual Total Time": 0.081,
+          "Actual Rows": 803,
+          "Actual Loops": 1,
+          "Index Cond": "((graded_at >= '2024-03-15 00:00:00+00'::timestamp with time zone) AND (graded_at < '2024-03-16 00:00:00+00'::timestamp with time zone))",
+          "Shared Hit Blocks": 6,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        }
+      ]
+    },
+    "Planning": {
+      "Shared Hit Blocks": 14,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.042,
+    "Triggers": [],
+    "Execution Time": 1.038
+  },
+  "catalog": {
+    "grades": {
+      "rows": 600000,
+      "columns": [
+        "id",
+        "enrollment_id",
+        "assessment",
+        "score",
+        "graded_at"
+      ],
+      "indexes": [
+        {
+          "name": "grades_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX grades_pkey ON public.grades USING btree (id)"
+        },
+        {
+          "name": "grades_graded_at_idx",
+          "columns": [
+            "graded_at"
+          ],
+          "definition": "CREATE INDEX grades_graded_at_idx ON public.grades USING btree (graded_at)"
+        }
+      ]
+    }
+  }
+}

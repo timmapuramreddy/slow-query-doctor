@@ -7,6 +7,15 @@ from sqd import db
 
 EXAMPLES = Path(__file__).parent.parent / "examples"
 
+# Example folder -> rule ids that `sqd check` should report for its slow.sql.
+EXPECTED = {
+    "01-missing-index": ["missing-index"],
+    "02-function-on-indexed-column": ["function-on-indexed-column"],
+    "03-leading-wildcard": ["leading-wildcard"],
+    "04-deep-offset": ["deep-offset"],
+    "05-non-sargable-date": ["non-sargable-date-filter"],
+}
+
 
 @pytest.mark.parametrize(
     "sql",
@@ -39,7 +48,7 @@ def test_ensure_select_rejects_anything_else(sql):
 
 @pytest.mark.integration
 @pytest.mark.skipif(not os.environ.get(db.DSN_ENV), reason="needs SQD_DATABASE_URL")
-def test_check_finds_both_rules_on_demo_database():
+def test_check_finds_each_rule_on_its_demo_example():
     import psycopg
 
     from sqd.plan import walk
@@ -47,11 +56,8 @@ def test_check_finds_both_rules_on_demo_database():
 
     found = {}
     with psycopg.connect(db.get_dsn()) as conn:
-        for name in ("01-missing-index", "02-function-on-indexed-column"):
+        for name in EXPECTED:
             plan = db.explain_analyze(conn, (EXAMPLES / name / "slow.sql").read_text())
             catalog = db.load_catalog(conn, {n.relation for n in walk(plan) if n.relation})
             found[name] = [f.rule_id for f in run_rules(plan, catalog)]
-    assert found == {
-        "01-missing-index": ["missing-index"],
-        "02-function-on-indexed-column": ["function-on-indexed-column"],
-    }
+    assert found == EXPECTED
