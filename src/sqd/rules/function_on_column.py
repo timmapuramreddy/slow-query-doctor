@@ -5,14 +5,11 @@ from __future__ import annotations
 import re
 
 from sqd.catalog import Catalog
-from sqd.plan import PlanNode, function_calls, referenced_columns
+from sqd.plan import DATE_FUNCTIONS, PlanNode, function_calls, referenced_columns
 from sqd.rules.base import Finding
 from sqd.rules.missing_index import is_selective_seq_scan
 
 RULE_ID = "function-on-indexed-column"
-
-# Date functions get their own rule (non-sargable date filters), so skip them here.
-DATE_FUNCTIONS = frozenset({"date_trunc", "date_part", "extract", "date"})
 
 _CAST = re.compile(r"::[a-z_ ]+(\([0-9, ]*\))?")
 
@@ -34,6 +31,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
 
     findings: list[Finding] = []
     for func, args in function_calls(node.filter):
+        # Date functions get their own rule (non-sargable date filters).
         if func in DATE_FUNCTIONS or table.has_expression_index(f"{func}({args})"):
             continue
         for col in referenced_columns(args, table.columns):

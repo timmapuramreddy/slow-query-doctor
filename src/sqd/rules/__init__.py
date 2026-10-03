@@ -6,10 +6,22 @@ from typing import Any
 
 from sqd.catalog import Catalog
 from sqd.plan import walk
-from sqd.rules import function_on_column, missing_index
+from sqd.rules import (
+    date_filter,
+    deep_offset,
+    function_on_column,
+    leading_wildcard,
+    missing_index,
+)
 from sqd.rules.base import Finding, Rule
 
-RULES: list[Rule] = [missing_index.check, function_on_column.check]
+RULES: list[Rule] = [
+    missing_index.check,
+    function_on_column.check,
+    leading_wildcard.check,
+    deep_offset.check,
+    date_filter.check,
+]
 
 
 def run_rules(plan: dict[str, Any], catalog: Catalog) -> list[Finding]:

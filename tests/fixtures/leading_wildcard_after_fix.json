@@ -1,0 +1,113 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Bitmap Heap Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "students",
+      "Alias": "students",
+      "Startup Cost": 129.83,
+      "Total Cost": 148.45,
+      "Plan Rows": 5,
+      "Plan Width": 37,
+      "Actual Startup Time": 1.658,
+      "Actual Total Time": 1.668,
+      "Actual Rows": 5,
+      "Actual Loops": 1,
+      "Recheck Cond": "((email)::text ~~ '%4242@example.edu'::text)",
+      "Rows Removed by Index Recheck": 0,
+      "Exact Heap Blocks": 5,
+      "Lossy Heap Blocks": 0,
+      "Shared Hit Blocks": 188,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Bitmap Index Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Index Name": "students_email_trgm_idx",
+          "Startup Cost": 0.0,
+          "Total Cost": 129.83,
+          "Plan Rows": 5,
+          "Plan Width": 0,
+          "Actual Startup Time": 1.635,
+          "Actual Total Time": 1.635,
+          "Actual Rows": 5,
+          "Actual Loops": 1,
+          "Index Cond": "((email)::text ~~ '%4242@example.edu'::text)",
+          "Shared Hit Blocks": 183,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        }
+      ]
+    },
+    "Planning": {
+      "Shared Hit Blocks": 25,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.164,
+    "Triggers": [],
+    "Execution Time": 1.682
+  },
+  "catalog": {
+    "students": {
+      "rows": 50000,
+      "columns": [
+        "id",
+        "first_name",
+        "last_name",
+        "email",
+        "birth_date",
+        "enrolled_on",
+        "status"
+      ],
+      "indexes": [
+        {
+          "name": "students_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_pkey ON public.students USING btree (id)"
+        },
+        {
+          "name": "students_email_idx",
+          "columns": [
+            "email"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_email_idx ON public.students USING btree (email)"
+        },
+        {
+          "name": "students_email_trgm_idx",
+          "columns": [
+            "email"
+          ],
+          "definition": "CREATE INDEX students_email_trgm_idx ON public.students USING gin (email gin_trgm_ops)"
+        }
+      ]
+    }
+  }
+}

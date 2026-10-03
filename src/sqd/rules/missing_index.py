@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from sqd.catalog import Catalog
-from sqd.plan import PlanNode, function_calls, referenced_columns
+from sqd.plan import (
+    PlanNode,
+    date_wrapped_columns,
+    function_calls,
+    leading_wildcard_columns,
+    referenced_columns,
+)
 from sqd.rules.base import LARGE_TABLE_ROWS, Finding
 
 RULE_ID = "missing-index"
@@ -30,12 +36,15 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
     table = catalog.get(node.relation)
     assert table is not None and node.filter is not None
 
-    # Columns inside a function call are rule 2's job: a plain index would not help them.
+    # Columns inside a function call, a date cast or a leading-wildcard LIKE belong to rules
+    # 2, 3 and 5: a plain index would not help them.
     wrapped = {
         col
         for _, args in function_calls(node.filter)
         for col in referenced_columns(args, table.columns)
     }
+    wrapped |= {col for col, _ in date_wrapped_columns(node.filter, table.columns)}
+    wrapped |= {col for col, _ in leading_wildcard_columns(node.filter, table.columns)}
     unindexed = [
         col
         for col in referenced_columns(node.filter, table.columns)
