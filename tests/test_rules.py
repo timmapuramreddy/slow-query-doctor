@@ -254,6 +254,14 @@ def test_deep_offset_silent_for_keyset_rewrite(fixture_loader):
     assert run_rules(plan, catalog) == []
 
 
+def test_deep_offset_silent_for_fetch_with_ties(fixture_loader):
+    # FETCH FIRST 5 ROWS WITH TIES returned 142,695 tied rows. The Limit kept all but the one
+    # row that broke the tie, so nothing was skipped the way OFFSET skips rows.
+    plan, catalog = fixture_loader("deep_offset_with_ties")
+    assert plan["Plan"]["Actual Rows"] > 100_000
+    assert [f.rule_id for f in run_rules(plan, catalog)] == []
+
+
 def test_deep_offset_silent_for_shallow_offset():
     assert run_rules(_limit(returned=20, produced=1_020), _catalog()) == []
 
