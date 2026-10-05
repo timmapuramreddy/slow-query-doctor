@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from sqd.catalog import Catalog, Index
-from sqd.plan import PlanNode, referenced_columns
+from sqd.plan import PlanNode, mask_literals, referenced_columns
 from sqd.rules.base import LARGE_TABLE_ROWS, Finding
 from sqd.rules.missing_index import MAX_KEPT_SHARE, wrapped_columns
 
@@ -29,7 +29,8 @@ def _index_used(node: PlanNode, catalog: Catalog) -> Index | None:
 
 def _compared_with_equals(expression: str, column: str) -> bool:
     """True if the column is tested with = (or = ANY), which belongs first in an index."""
-    return bool(re.search(rf"\b{column}\)?(?:::[a-z ]+?)?\s+=\s", expression))
+    pattern = rf"\b{re.escape(column)}\)?(?:::[a-z ]+?(?:\[\])*)?\s+=\s"
+    return bool(re.search(pattern, mask_literals(expression)))
 
 
 def check(node: PlanNode, catalog: Catalog) -> list[Finding]:

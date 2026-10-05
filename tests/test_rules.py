@@ -555,3 +555,21 @@ def test_filter_after_index_puts_range_column_after_index_columns():
     plan = _bitmap_scan("(score < '50'::numeric)", kept=500, removed=25_000)
     findings = run_rules(plan, _grades_catalog())
     assert findings[0].suggestion.endswith("CREATE INDEX ON grades (graded_at, score);")
+
+
+def test_filter_after_index_ignores_equals_inside_a_string():
+    plan = _bitmap_scan(
+        "((score > '10'::numeric) AND (assessment = 'score = 5'::text))", kept=500, removed=25_000
+    )
+    findings = run_rules(plan, _grades_catalog())
+    assert findings[0].suggestion.endswith("CREATE INDEX ON grades (assessment, graded_at, score);")
+
+
+def test_filter_after_index_treats_equals_any_on_array_cast_as_equality():
+    plan = _bitmap_scan(
+        "((score < '50'::numeric) AND ((assessment)::text[] = ANY ('{a,b}'::text[])))",
+        kept=500,
+        removed=25_000,
+    )
+    findings = run_rules(plan, _grades_catalog())
+    assert findings[0].suggestion.endswith("CREATE INDEX ON grades (assessment, graded_at, score);")

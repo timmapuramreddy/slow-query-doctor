@@ -101,3 +101,22 @@ def test_own_filter_uses_alias_and_relation_name():
         depth=0,
     )
     assert node.own_filter == "(status = $0)"
+
+
+def test_row_counts_multiply_fractional_per_loop_averages():
+    # PostgreSQL 18 prints per-loop averages with decimals.
+    raw = {"Actual Rows": 0.4, "Rows Removed by Filter": 0.9, "Actual Loops": 20_000}
+    node = PlanNode(raw=raw, depth=0)
+    assert (node.actual_rows, node.rows_removed_by_filter) == (8_000, 18_000)
+
+
+def test_localize_reads_quoted_names():
+    expr = '(("Order".user_id)::integer = ("User".id)::integer)'
+    assert localize(expr, {"Order"}) == "((user_id)::integer = ($0)::integer)"
+
+
+def test_referenced_columns_matches_quoted_mixed_case_columns():
+    assert referenced_columns('(("UserId" = 5) AND (id > 1))', ["UserId", "id"]) == [
+        "UserId",
+        "id",
+    ]

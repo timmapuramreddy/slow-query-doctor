@@ -8,18 +8,20 @@ from dataclasses import dataclass
 from typing import Any
 
 _STRING = re.compile(r"'(?:[^']|'')*'")
+# A plain lowercase name, or a quoted one such as "UserId" ("" inside is a literal quote).
+_NAME = r'(?:[a-z_][a-z0-9_$]*|"(?:[^"]|"")+")'
 # A name that is not a function call.
-_IDENT = re.compile(r"\b[a-z_][a-z0-9_]*\b(?!\s*\()")
+_IDENT = re.compile(rf"(?<![\w$\"]){_NAME}(?![\w$])(?!\s*\()")
 # The type in a cast, so '::date' or '::timestamp with time zone' is not read as a column.
 _CAST_TYPE = re.compile(
-    r"::(?:[a-z_][a-z0-9_]*\.)?(?:(?:timestamp|time) with(?:out)? time zone"
-    r"|character varying|double precision|bit varying|[a-z_][a-z0-9_]*)"
+    rf"::(?:{_NAME}\.)?(?:(?:timestamp|time) with(?:out)? time zone"
+    rf"|character varying|double precision|bit varying|{_NAME})"
     r"(?:\([0-9, ]*\))?(?:\[\])*"
 )
 # The field in EXTRACT(year FROM col), which is a keyword, not a column.
 _EXTRACT_FIELD = re.compile(r"\bextract\(\s*\w+\s+from\b", re.I)
 # alias.column, but not schema.function( or ::schema.type.
-_QUALIFIED = re.compile(r"(?<!::)\b([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\b(?!\s*\()")
+_QUALIFIED = re.compile(rf"(?<!::)(?<![\w$\"])({_NAME})\.({_NAME})(?![\w$])(?!\s*\()")
 
 
 @dataclass(frozen=True)
@@ -59,11 +61,11 @@ class PlanNode:
     @property
     def actual_rows(self) -> int:
         """Rows returned across all loops (EXPLAIN reports a per-loop average)."""
-        return int(self.raw.get("Actual Rows", 0)) * self.loops
+        return round(float(self.raw.get("Actual Rows", 0)) * self.loops)
 
     @property
     def rows_removed_by_filter(self) -> int:
-        return int(self.raw.get("Rows Removed by Filter", 0)) * self.loops
+        return round(float(self.raw.get("Rows Removed by Filter", 0)) * self.loops)
 
     @property
     def total_time_ms(self) -> float:
@@ -104,6 +106,11 @@ def mask_literals(expression: str) -> str:
     return _STRING.sub(lambda m: "'" + " " * (len(m.group()) - 2) + "'", expression)
 
 
+def unquote(name: str) -> str:
+    """'"UserId"' -> 'UserId'; plain names are returned as they are."""
+    return name[1:-1].replace('""', '"') if name.startswith('"') else name
+
+
 def localize(expression: str, names: set[str]) -> str:
     """One table's view of an expression: drop its own alias, hide other tables' columns.
 
@@ -116,7 +123,7 @@ def localize(expression: str, names: set[str]) -> str:
     last = 0
     for match in _QUALIFIED.finditer(masked):
         parts.append(expression[last : match.start()])
-        parts.append(match.group(2) if match.group(1) in names else "$0")
+        parts.append(match.group(2) if unquote(match.group(1)) in names else "$0")
         last = match.end()
     parts.append(expression[last:])
     return "".join(parts)
@@ -131,7 +138,7 @@ def referenced_columns(expression: str, columns: list[str]) -> list[str]:
     known = set(columns)
     seen: list[str] = []
     text = _EXTRACT_FIELD.sub("extract(", _CAST_TYPE.sub("", strip_literals(expression)))
-    for token in _IDENT.findall(text):
+    for token in map(unquote, _IDENT.findall(text)):
         if token in known and token not in seen:
             seen.append(token)
     return seen
