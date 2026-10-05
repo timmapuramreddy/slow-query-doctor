@@ -27,10 +27,11 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
     if not is_selective_seq_scan(node, catalog):
         return []
     table = catalog.get(node.relation)
-    assert table is not None and node.filter is not None
+    filter_ = node.own_filter
+    assert table is not None and filter_ is not None
 
     findings: list[Finding] = []
-    for func, args in function_calls(node.filter):
+    for func, args in function_calls(filter_):
         # Date functions get their own rule (non-sargable date filters).
         if func in DATE_FUNCTIONS or table.has_expression_index(f"{func}({args})"):
             continue

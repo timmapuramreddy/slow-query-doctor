@@ -1,0 +1,221 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Gather",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 1008.3,
+      "Total Cost": 5506.17,
+      "Plan Rows": 600,
+      "Plan Width": 20,
+      "Actual Startup Time": 0.956,
+      "Actual Total Time": 31.806,
+      "Actual Rows": 579,
+      "Actual Loops": 1,
+      "Workers Planned": 1,
+      "Workers Launched": 1,
+      "Single Copy": false,
+      "Shared Hit Blocks": 2261,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Hash Join",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Join Type": "Inner",
+          "Startup Cost": 8.3,
+          "Total Cost": 4446.17,
+          "Plan Rows": 353,
+          "Plan Width": 20,
+          "Actual Startup Time": 0.282,
+          "Actual Total Time": 25.552,
+          "Actual Rows": 290,
+          "Actual Loops": 2,
+          "Inner Unique": true,
+          "Hash Cond": "(e.course_id = c.id)",
+          "Shared Hit Blocks": 2261,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Workers": [],
+          "Plans": [
+            {
+              "Node Type": "Seq Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": true,
+              "Async Capable": false,
+              "Relation Name": "enrollments",
+              "Alias": "e",
+              "Startup Cost": 0.0,
+              "Total Cost": 3970.71,
+              "Plan Rows": 176471,
+              "Plan Width": 18,
+              "Actual Startup Time": 0.015,
+              "Actual Total Time": 14.738,
+              "Actual Rows": 150000,
+              "Actual Loops": 2,
+              "Shared Hit Blocks": 2206,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Workers": []
+            },
+            {
+              "Node Type": "Hash",
+              "Parent Relationship": "Inner",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 8.29,
+              "Total Cost": 8.29,
+              "Plan Rows": 1,
+              "Plan Width": 10,
+              "Actual Startup Time": 0.078,
+              "Actual Total Time": 0.079,
+              "Actual Rows": 1,
+              "Actual Loops": 2,
+              "Hash Buckets": 1024,
+              "Original Hash Buckets": 1024,
+              "Hash Batches": 1,
+              "Original Hash Batches": 1,
+              "Peak Memory Usage": 9,
+              "Shared Hit Blocks": 7,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Workers": [],
+              "Plans": [
+                {
+                  "Node Type": "Index Scan",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Scan Direction": "Forward",
+                  "Index Name": "courses_code_key",
+                  "Relation Name": "courses",
+                  "Alias": "c",
+                  "Startup Cost": 0.27,
+                  "Total Cost": 8.29,
+                  "Plan Rows": 1,
+                  "Plan Width": 10,
+                  "Actual Startup Time": 0.069,
+                  "Actual Total Time": 0.07,
+                  "Actual Rows": 1,
+                  "Actual Loops": 2,
+                  "Index Cond": "(code = 'C0042'::text)",
+                  "Rows Removed by Index Recheck": 0,
+                  "Shared Hit Blocks": 7,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Workers": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "Planning": {
+      "Shared Hit Blocks": 253,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 3.599,
+    "Triggers": [],
+    "Execution Time": 31.996
+  },
+  "catalog": {
+    "courses": {
+      "rows": 500,
+      "columns": [
+        "id",
+        "code",
+        "title",
+        "department",
+        "credits"
+      ],
+      "indexes": [
+        {
+          "name": "courses_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX courses_pkey ON public.courses USING btree (id)"
+        },
+        {
+          "name": "courses_code_key",
+          "columns": [
+            "code"
+          ],
+          "definition": "CREATE UNIQUE INDEX courses_code_key ON public.courses USING btree (code)"
+        }
+      ]
+    },
+    "enrollments": {
+      "rows": 300000,
+      "columns": [
+        "id",
+        "student_id",
+        "course_id",
+        "term",
+        "enrolled_at"
+      ],
+      "indexes": [
+        {
+          "name": "enrollments_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX enrollments_pkey ON public.enrollments USING btree (id)"
+        },
+        {
+          "name": "enrollments_student_id_idx",
+          "columns": [
+            "student_id"
+          ],
+          "definition": "CREATE INDEX enrollments_student_id_idx ON public.enrollments USING btree (student_id)"
+        }
+      ]
+    }
+  }
+}

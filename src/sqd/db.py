@@ -13,10 +13,8 @@ from sqd.catalog import Catalog, Index, Table
 
 DSN_ENV = "SQD_DATABASE_URL"
 
-_LINE_COMMENT = re.compile(r"--[^\n]*")
-_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
-_STRING = re.compile(r"'(?:[^']|'')*'")
 _WRITE_WORDS = re.compile(r"\b(insert|update|delete|merge|truncate|alter|drop|create)\b", re.I)
+_DOLLAR_TAG = re.compile(r"\$(?:[a-z_][a-z0-9_]*)?\$", re.I)
 
 
 class UnsafeQueryError(ValueError):
@@ -31,24 +29,129 @@ def get_dsn(dsn: str | None = None) -> str:
     return value
 
 
+def _quoted_end(sql: str, start: int, quote: str, backslash: bool) -> int:
+    """Index just past the quote that closes the one at `start` ('' or "" inside is escaped)."""
+    pos = start + 1
+    while pos < len(sql):
+        # Skip a backslash escape (E'...' only) or a doubled quote.
+        if (backslash and sql[pos] == "\\") or sql.startswith(quote * 2, pos):
+            pos += 2
+        elif sql[pos] == quote:
+            return pos + 1
+        else:
+            pos += 1
+    raise UnsafeQueryError(f"Unclosed {quote} quote.")
+
+
+def mask_sql(sql: str) -> str:
+    """Same-length copy of the SQL with comments blanked and the inside of quotes blanked.
+
+    Checks and statement splitting read this copy, so '--', '/*', ';' or a keyword inside a
+    string, a quoted name or a $$ block is ignored, while positions still match the original.
+    """
+    out = list(sql)
+    pos = 0
+    while pos < len(sql):
+        char = sql[pos]
+        if sql.startswith("--", pos):
+            end = sql.find("\n", pos)
+            end = len(sql) if end < 0 else end
+            out[pos:end] = " " * (end - pos)
+        elif sql.startswith("/*", pos):
+            depth, end = 1, pos + 2  # PostgreSQL block comments nest.
+            while end < len(sql) and depth:
+                if sql.startswith("/*", end):
+                    depth, end = depth + 1, end + 2
+                elif sql.startswith("*/", end):
+                    depth, end = depth - 1, end + 2
+                else:
+                    end += 1
+            if depth:
+                raise UnsafeQueryError("Unclosed /* comment.")
+            out[pos:end] = " " * (end - pos)
+        elif char in "'\"":
+            prev = sql[pos - 2 : pos]
+            escape = char == "'" and prev[-1:] in ("e", "E") and not prev[:-1].isalnum()
+            end = _quoted_end(sql, pos, char, escape)
+            out[pos + 1 : end - 1] = " " * (end - pos - 2)
+        elif (
+            char == "$"
+            and (tag := _DOLLAR_TAG.match(sql, pos))
+            and not (pos and (sql[pos - 1].isalnum() or sql[pos - 1] == "_"))
+        ):
+            close = sql.find(tag.group(), tag.end())
+            if close < 0:
+                raise UnsafeQueryError("Unclosed $$ string.")
+            out[tag.end() : close] = " " * (close - tag.end())
+            end = close + len(tag.group())
+        else:
+            end = pos + 1
+        pos = end
+    return "".join(out)
+
+
+def _trim(sql: str, masked: str, start: int, end: int) -> tuple[str, str]:
+    """(original, masked) text of sql[start:end] without the blank or comment edges."""
+    while start < end and masked[start].isspace():
+        start += 1
+    while end > start and masked[end - 1].isspace():
+        end -= 1
+    return sql[start:end], masked[start:end]
+
+
 def ensure_select(sql: str) -> str:
     """Return the query without a trailing semicolon, or raise if it is not one SELECT.
 
     EXPLAIN ANALYZE executes the query, so v1 only accepts SELECT / WITH ... SELECT.
     The read-only transaction in explain_analyze() is the second guard.
     """
-    stripped = _BLOCK_COMMENT.sub(" ", _LINE_COMMENT.sub(" ", sql)).strip().rstrip(";").strip()
-    no_strings = _STRING.sub("''", stripped)
-    if not stripped:
+    masked = mask_sql(sql)
+    query, check = _trim(sql, masked, 0, len(sql))
+    if check.endswith(";"):
+        query, check = _trim(query, check, 0, len(check) - 1)
+    if not check:
         raise UnsafeQueryError("The file has no SQL in it.")
-    if ";" in no_strings:
+    if ";" in check:
         raise UnsafeQueryError("Only one statement per file is supported.")
-    first = no_strings.split(None, 1)[0].lower()
+    first = check.split(None, 1)[0].lower()
     if first not in ("select", "with"):
         raise UnsafeQueryError(f"Only SELECT queries are allowed in v1, got {first.upper()}.")
-    if _WRITE_WORDS.search(no_strings):
+    if _WRITE_WORDS.search(check):
         raise UnsafeQueryError("The query contains a write statement; only reads are allowed.")
-    return stripped
+    return query
+
+
+_SETUP_STATEMENT = re.compile(r"(create\s+(unique\s+)?index|create\s+extension|analyze)\b", re.I)
+_CONCURRENTLY = re.compile(r"\bconcurrently\b", re.I)
+
+
+def ensure_setup(sql: str) -> list[str]:
+    """Split a `compare --setup` file into statements, or raise if one is not allowed.
+
+    Only CREATE INDEX, CREATE EXTENSION and ANALYZE: what an index fix needs. They run in
+    the comparison's transaction, which is always rolled back.
+    """
+    masked = mask_sql(sql)
+    statements: list[str] = []
+    start = 0
+    for end in [i for i, char in enumerate(masked) if char == ";"] + [len(masked)]:
+        statement, check = _trim(sql, masked, start, end)
+        start = end + 1
+        if not check:
+            continue
+        if not _SETUP_STATEMENT.match(check):
+            first = check.split(None, 1)[0].upper()
+            raise UnsafeQueryError(
+                f"--setup only allows CREATE INDEX, CREATE EXTENSION and ANALYZE, got {first}."
+            )
+        if _CONCURRENTLY.search(check):
+            raise UnsafeQueryError(
+                "CREATE INDEX CONCURRENTLY cannot run in a transaction; drop CONCURRENTLY."
+            )
+        statements.append(statement)
+    if not statements:
+        raise UnsafeQueryError("The --setup file has no SQL in it.")
+    return statements
 
 
 def explain_analyze(conn: psycopg.Connection, sql: str) -> dict[str, Any]:

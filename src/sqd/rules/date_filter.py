@@ -11,15 +11,30 @@ RULE_ID = "non-sargable-date-filter"
 
 
 def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
-    """Return a finding for each date column hidden inside date_trunc(), EXTRACT() or a cast."""
+    """Return a finding for each date column hidden inside date_trunc(), EXTRACT() or a cast.
+
+    Stays silent for a column when an expression index matches the exact wrapped expression.
+    """
     if not is_selective_seq_scan(node, catalog):
         return []
     table = catalog.get(node.relation)
-    assert table is not None and node.filter is not None
+    filter_ = node.own_filter
+    assert table is not None and filter_ is not None
 
+    wrapped = date_wrapped_columns(filter_, table.columns)
+    # Only the outermost expressions count: a cast inside date_trunc() is part of it.
+    outer = [
+        (col, expr)
+        for col, _, expr in wrapped
+        if not any(expr != other and expr in other for _, _, other in wrapped)
+    ]
+    seen = {
+        col
+        for col in {c for c, _ in outer}
+        if all(table.has_expression_index(expr) for c, expr in outer if c == col)
+    }
     findings: list[Finding] = []
-    seen: set[str] = set()
-    for col, wrapper in date_wrapped_columns(node.filter, table.columns):
+    for col, wrapper, _ in wrapped:
         if col in seen:
             continue
         seen.add(col)
