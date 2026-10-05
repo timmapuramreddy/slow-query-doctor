@@ -1,0 +1,195 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Nested Loop",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Join Type": "Inner",
+      "Startup Cost": 9.35,
+      "Total Cost": 1369.72,
+      "Plan Rows": 600,
+      "Plan Width": 20,
+      "Actual Startup Time": 0.113,
+      "Actual Total Time": 0.582,
+      "Actual Rows": 579,
+      "Actual Loops": 1,
+      "Inner Unique": false,
+      "Shared Hit Blocks": 517,
+      "Shared Read Blocks": 1,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Index Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Scan Direction": "Forward",
+          "Index Name": "courses_code_key",
+          "Relation Name": "courses",
+          "Alias": "c",
+          "Startup Cost": 0.27,
+          "Total Cost": 8.29,
+          "Plan Rows": 1,
+          "Plan Width": 10,
+          "Actual Startup Time": 0.012,
+          "Actual Total Time": 0.013,
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Index Cond": "(code = 'C0042'::text)",
+          "Rows Removed by Index Recheck": 0,
+          "Shared Hit Blocks": 3,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        {
+          "Node Type": "Bitmap Heap Scan",
+          "Parent Relationship": "Inner",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Relation Name": "enrollments",
+          "Alias": "e",
+          "Startup Cost": 9.07,
+          "Total Cost": 1355.43,
+          "Plan Rows": 600,
+          "Plan Width": 18,
+          "Actual Startup Time": 0.098,
+          "Actual Total Time": 0.52,
+          "Actual Rows": 579,
+          "Actual Loops": 1,
+          "Recheck Cond": "(c.id = course_id)",
+          "Rows Removed by Index Recheck": 0,
+          "Exact Heap Blocks": 512,
+          "Lossy Heap Blocks": 0,
+          "Shared Hit Blocks": 514,
+          "Shared Read Blocks": 1,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Bitmap Index Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Index Name": "enrollments_course_id_idx",
+              "Startup Cost": 0.0,
+              "Total Cost": 8.92,
+              "Plan Rows": 600,
+              "Plan Width": 0,
+              "Actual Startup Time": 0.059,
+              "Actual Total Time": 0.059,
+              "Actual Rows": 579,
+              "Actual Loops": 1,
+              "Index Cond": "(course_id = c.id)",
+              "Shared Hit Blocks": 2,
+              "Shared Read Blocks": 1,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            }
+          ]
+        }
+      ]
+    },
+    "Planning": {
+      "Shared Hit Blocks": 200,
+      "Shared Read Blocks": 6,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.661,
+    "Triggers": [],
+    "Execution Time": 0.625
+  },
+  "catalog": {
+    "courses": {
+      "rows": 500,
+      "columns": [
+        "id",
+        "code",
+        "title",
+        "department",
+        "credits"
+      ],
+      "indexes": [
+        {
+          "name": "courses_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX courses_pkey ON public.courses USING btree (id)"
+        },
+        {
+          "name": "courses_code_key",
+          "columns": [
+            "code"
+          ],
+          "definition": "CREATE UNIQUE INDEX courses_code_key ON public.courses USING btree (code)"
+        }
+      ]
+    },
+    "enrollments": {
+      "rows": 300000,
+      "columns": [
+        "id",
+        "student_id",
+        "course_id",
+        "term",
+        "enrolled_at"
+      ],
+      "indexes": [
+        {
+          "name": "enrollments_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX enrollments_pkey ON public.enrollments USING btree (id)"
+        },
+        {
+          "name": "enrollments_student_id_idx",
+          "columns": [
+            "student_id"
+          ],
+          "definition": "CREATE INDEX enrollments_student_id_idx ON public.enrollments USING btree (student_id)"
+        },
+        {
+          "name": "enrollments_course_id_idx",
+          "columns": [
+            "course_id"
+          ],
+          "definition": "CREATE INDEX enrollments_course_id_idx ON public.enrollments USING btree (course_id)"
+        }
+      ]
+    }
+  }
+}

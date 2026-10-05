@@ -9,6 +9,7 @@ from sqd.plan import walk
 from sqd.rules import (
     date_filter,
     deep_offset,
+    filter_after_index,
     function_on_column,
     leading_wildcard,
     missing_index,
@@ -17,10 +18,12 @@ from sqd.rules.base import Finding, Rule
 
 RULES: list[Rule] = [
     missing_index.check,
+    missing_index.check_join,
     function_on_column.check,
     leading_wildcard.check,
     deep_offset.check,
     date_filter.check,
+    filter_after_index.check,
 ]
 
 

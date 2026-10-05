@@ -356,3 +356,202 @@ def test_date_filter_fires_when_expression_index_uses_another_precision():
         "'2024-03-15 00:00:00'::timestamp without time zone)"
     )
     assert [f.rule_id for f in run_rules(plan, catalog)] == ["non-sargable-date-filter"]
+
+
+# Rule 1 on joins: a join key with no index
+
+
+def _join_catalog(student_id_indexed: bool = False) -> Catalog:
+    indexes = (
+        [{"name": "e_sid", "columns": ["student_id"], "definition": "(student_id)"}]
+        if student_id_indexed
+        else []
+    )
+    return Catalog.from_dict(
+        {
+            "enrollments": {
+                "rows": 300_000,
+                "columns": ["id", "student_id", "course_id"],
+                "indexes": indexes,
+            },
+            "courses": {"rows": 500, "columns": ["id", "code"], "indexes": []},
+        }
+    )
+
+
+def _hash_join(cond: str, joined: int = 600, other: int = 1) -> dict:
+    return {
+        "Plan": {
+            "Node Type": "Hash Join",
+            "Hash Cond": cond,
+            "Actual Rows": joined,
+            "Actual Loops": 1,
+            "Actual Total Time": 30.0,
+            "Plans": [
+                {
+                    "Node Type": "Seq Scan",
+                    "Relation Name": "enrollments",
+                    "Alias": "e",
+                    "Actual Rows": 300_000,
+                    "Actual Loops": 1,
+                    "Actual Total Time": 25.0,
+                },
+                {
+                    "Node Type": "Hash",
+                    "Actual Rows": other,
+                    "Actual Loops": 1,
+                    "Plans": [
+                        {
+                            "Node Type": "Seq Scan",
+                            "Relation Name": "courses",
+                            "Alias": "c",
+                            "Actual Rows": other,
+                            "Actual Loops": 1,
+                            "Actual Total Time": 0.1,
+                        }
+                    ],
+                },
+            ],
+        }
+    }
+
+
+def test_join_key_fires_on_real_slow_plan(fixture_loader):
+    plan, catalog = fixture_loader("join_key_slow")
+    findings = run_rules(plan, catalog)
+    assert [f.rule_id for f in findings] == ["missing-index"]
+    assert findings[0].title == "No index on enrollments.course_id (join key)"
+    assert findings[0].suggestion == "CREATE INDEX ON enrollments (course_id);"
+
+
+def test_join_key_silent_after_index_is_added(fixture_loader):
+    plan, catalog = fixture_loader("join_key_after_fix")
+    assert run_rules(plan, catalog) == []
+
+
+def test_join_key_silent_when_join_keeps_most_rows():
+    assert run_rules(_hash_join("(e.course_id = c.id)", joined=250_000), _join_catalog()) == []
+
+
+def test_join_key_silent_when_other_side_is_large():
+    plan = _hash_join("(e.course_id = c.id)", other=100_000)
+    assert run_rules(plan, _join_catalog()) == []
+
+
+def test_join_key_silent_when_key_is_indexed():
+    plan = _hash_join("(e.student_id = c.id)")
+    assert run_rules(plan, _join_catalog(student_id_indexed=True)) == []
+
+
+def test_join_key_reads_only_this_tables_side_of_the_condition():
+    # c.student_id is the other table's column; enrollments.student_id is indexed.
+    plan = _hash_join("(e.student_id = c.student_id)")
+    assert run_rules(plan, _join_catalog(student_id_indexed=True)) == []
+
+
+def test_join_key_fires_for_nested_loop_join_filter_over_materialize():
+    plan = {
+        "Plan": {
+            "Node Type": "Nested Loop",
+            "Join Filter": "(e.course_id = c.id)",
+            "Actual Rows": 600,
+            "Rows Removed by Join Filter": 299_400,
+            "Actual Loops": 1,
+            "Actual Total Time": 80.0,
+            "Plans": [
+                {
+                    "Node Type": "Seq Scan",
+                    "Relation Name": "courses",
+                    "Alias": "c",
+                    "Actual Rows": 1,
+                    "Actual Loops": 1,
+                },
+                {
+                    "Node Type": "Materialize",
+                    "Actual Rows": 300_000,
+                    "Actual Loops": 1,
+                    "Plans": [
+                        {
+                            "Node Type": "Seq Scan",
+                            "Relation Name": "enrollments",
+                            "Alias": "e",
+                            "Actual Rows": 300_000,
+                            "Actual Loops": 1,
+                            "Actual Total Time": 25.0,
+                        }
+                    ],
+                },
+            ],
+        }
+    }
+    findings = run_rules(plan, _join_catalog())
+    assert [f.title for f in findings] == ["No index on enrollments.course_id (join key)"]
+
+
+# Rule 6: the index finds rows, the filter throws most away
+
+
+def _bitmap_scan(filter_: str, kept: int, removed: int, index: str = "g_idx") -> dict:
+    return {
+        "Plan": {
+            "Node Type": "Bitmap Heap Scan",
+            "Relation Name": "grades",
+            "Alias": "grades",
+            "Filter": filter_,
+            "Actual Rows": kept,
+            "Rows Removed by Filter": removed,
+            "Actual Loops": 1,
+            "Actual Total Time": 30.0,
+            "Plans": [
+                {
+                    "Node Type": "Bitmap Index Scan",
+                    "Index Name": index,
+                    "Actual Rows": kept + removed,
+                    "Actual Loops": 1,
+                }
+            ],
+        }
+    }
+
+
+def _grades_catalog() -> Catalog:
+    return Catalog.from_dict(
+        {
+            "grades": {
+                "rows": 600_000,
+                "columns": ["id", "graded_at", "assessment", "score"],
+                "indexes": [
+                    {"name": "g_idx", "columns": ["graded_at"], "definition": "(graded_at)"}
+                ],
+            }
+        }
+    )
+
+
+def test_filter_after_index_fires_on_real_slow_plan(fixture_loader):
+    plan, catalog = fixture_loader("filter_after_index_slow")
+    findings = run_rules(plan, catalog)
+    assert [f.rule_id for f in findings] == ["filter-after-index"]
+    assert findings[0].title == "grades_graded_at_idx found 26,347 rows, the filter kept 888"
+    assert findings[0].suggestion.endswith("CREATE INDEX ON grades (assessment, graded_at, score);")
+
+
+def test_filter_after_index_silent_after_combined_index(fixture_loader):
+    plan, catalog = fixture_loader("filter_after_index_after_fix")
+    assert run_rules(plan, catalog) == []
+
+
+def test_filter_after_index_silent_when_filter_removes_few_rows():
+    plan = _bitmap_scan("(assessment = 'final'::text)", kept=10, removed=900)
+    assert run_rules(plan, _grades_catalog()) == []
+
+
+def test_filter_after_index_silent_when_filter_keeps_most_rows():
+    plan = _bitmap_scan("(score < '99'::numeric)", kept=50_000, removed=20_000)
+    assert run_rules(plan, _grades_catalog()) == []
+
+
+def test_filter_after_index_puts_range_column_after_index_columns():
+    plan = _bitmap_scan("(score < '50'::numeric)", kept=500, removed=25_000)
+    findings = run_rules(plan, _grades_catalog())
+    assert findings[0].suggestion.endswith("CREATE INDEX ON grades (graded_at, score);")

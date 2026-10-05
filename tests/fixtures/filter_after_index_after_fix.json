@@ -1,0 +1,113 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Bitmap Heap Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "grades",
+      "Alias": "grades",
+      "Startup Cost": 191.32,
+      "Total Cost": 2380.59,
+      "Plan Rows": 875,
+      "Plan Width": 22,
+      "Actual Startup Time": 0.799,
+      "Actual Total Time": 1.53,
+      "Actual Rows": 888,
+      "Actual Loops": 1,
+      "Recheck Cond": "((assessment = 'final'::text) AND (graded_at >= '2024-03-01 00:00:00+00'::timestamp with time zone) AND (graded_at < '2024-04-01 00:00:00+00'::timestamp with time zone) AND (score < '50'::numeric))",
+      "Rows Removed by Index Recheck": 0,
+      "Exact Heap Blocks": 811,
+      "Lossy Heap Blocks": 0,
+      "Shared Hit Blocks": 811,
+      "Shared Read Blocks": 29,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Bitmap Index Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Index Name": "grades_assessment_graded_at_score_idx",
+          "Startup Cost": 0.0,
+          "Total Cost": 191.1,
+          "Plan Rows": 875,
+          "Plan Width": 0,
+          "Actual Startup Time": 0.741,
+          "Actual Total Time": 0.741,
+          "Actual Rows": 888,
+          "Actual Loops": 1,
+          "Index Cond": "((assessment = 'final'::text) AND (graded_at >= '2024-03-01 00:00:00+00'::timestamp with time zone) AND (graded_at < '2024-04-01 00:00:00+00'::timestamp with time zone) AND (score < '50'::numeric))",
+          "Shared Hit Blocks": 0,
+          "Shared Read Blocks": 29,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        }
+      ]
+    },
+    "Planning": {
+      "Shared Hit Blocks": 71,
+      "Shared Read Blocks": 1,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.283,
+    "Triggers": [],
+    "Execution Time": 1.568
+  },
+  "catalog": {
+    "grades": {
+      "rows": 600000,
+      "columns": [
+        "id",
+        "enrollment_id",
+        "assessment",
+        "score",
+        "graded_at"
+      ],
+      "indexes": [
+        {
+          "name": "grades_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX grades_pkey ON public.grades USING btree (id)"
+        },
+        {
+          "name": "grades_graded_at_idx",
+          "columns": [
+            "graded_at"
+          ],
+          "definition": "CREATE INDEX grades_graded_at_idx ON public.grades USING btree (graded_at)"
+        },
+        {
+          "name": "grades_assessment_graded_at_score_idx",
+          "columns": [
+            "assessment",
+            "graded_at",
+            "score"
+          ],
+          "definition": "CREATE INDEX grades_assessment_graded_at_score_idx ON public.grades USING btree (assessment, graded_at, score)"
+        }
+      ]
+    }
+  }
+}

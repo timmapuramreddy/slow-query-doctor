@@ -14,6 +14,8 @@ EXPECTED = {
     "03-leading-wildcard": ["leading-wildcard"],
     "04-deep-offset": ["deep-offset"],
     "05-non-sargable-date": ["non-sargable-date-filter"],
+    "06-join-missing-index": ["missing-index"],
+    "07-filter-after-index": ["filter-after-index"],
 }
 
 
