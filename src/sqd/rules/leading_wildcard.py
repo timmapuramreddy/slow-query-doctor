@@ -10,10 +10,35 @@ from sqd.rules.missing_index import is_selective_seq_scan
 RULE_ID = "leading-wildcard"
 
 
+def _index_items(definition: str) -> list[str]:
+    """Key items of an index: 'USING gin (a gin_trgm_ops, b)' -> ['a gin_trgm_ops', 'b']."""
+    start = definition.find("(", definition.find(" USING "))
+    items: list[str] = []
+    depth = 0
+    current = ""
+    for char in definition[start + 1 :]:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            if depth == 0:
+                break
+            depth -= 1
+        elif char == "," and depth == 0:
+            items.append(current.strip())
+            current = ""
+            continue
+        current += char
+    items.append(current.strip())
+    return items
+
+
 def _has_trigram_index(table: Table, column: str) -> bool:
-    """True if a pg_trgm index covers the column (it can serve LIKE '%x')."""
+    """True if a pg_trgm index covers the column in any position (it can serve LIKE '%x')."""
     return any(
-        "_trgm_ops" in ix.definition and f"({column} " in ix.definition for ix in table.indexes
+        name == column and "_trgm_ops" in item
+        for ix in table.indexes
+        if "_trgm_ops" in ix.definition
+        for name, item in zip(ix.columns, _index_items(ix.definition), strict=False)
     )
 
 

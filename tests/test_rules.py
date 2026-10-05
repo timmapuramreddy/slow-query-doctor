@@ -184,6 +184,32 @@ def test_leading_wildcard_silent_when_seq_scan_already_has_trigram_index():
     assert run_rules(plan, _catalog(indexes=indexes)) == []
 
 
+def test_leading_wildcard_silent_when_column_is_second_in_a_trigram_index():
+    indexes = [
+        {
+            "name": "students_names_trgm_idx",
+            "columns": ["email", "first_name"],
+            "definition": "CREATE INDEX students_names_trgm_idx ON students "
+            "USING gin (email gin_trgm_ops, first_name gin_trgm_ops)",
+        }
+    ]
+    plan = _seq_scan("(first_name ~~* '%sha'::text)")
+    assert run_rules(plan, _catalog(indexes=indexes)) == []
+
+
+def test_leading_wildcard_fires_when_only_another_column_has_trigram_ops():
+    indexes = [
+        {
+            "name": "students_mixed_idx",
+            "columns": ["email", "first_name"],
+            "definition": "CREATE INDEX students_mixed_idx ON students "
+            "USING gist (email gist_trgm_ops, first_name)",
+        }
+    ]
+    plan = _seq_scan("(first_name ~~* '%sha'::text)")
+    assert [f.rule_id for f in run_rules(plan, _catalog(indexes=indexes))] == ["leading-wildcard"]
+
+
 def test_leading_wildcard_on_unindexed_column_does_not_suggest_btree_index():
     findings = run_rules(_seq_scan("(first_name ~~* '_sha%'::text)"), _catalog())
     assert [f.rule_id for f in findings] == ["leading-wildcard"]
