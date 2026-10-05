@@ -46,6 +46,40 @@ def test_ensure_select_rejects_anything_else(sql):
         db.ensure_select(sql)
 
 
+@pytest.mark.parametrize(
+    "sql, count",
+    [
+        ("CREATE INDEX ON attendance (enrollment_id);", 1),
+        (
+            "-- trigram\nCREATE EXTENSION IF NOT EXISTS pg_trgm;\n"
+            "CREATE INDEX s_idx ON students USING gin (email gin_trgm_ops);",
+            2,
+        ),
+        ("create unique index on t (lower(x)); analyze t", 2),
+        ("CREATE INDEX ON t (x) WHERE note <> 'a;b'", 1),
+    ],
+)
+def test_ensure_setup_accepts_index_extension_and_analyze(sql, count):
+    assert len(db.ensure_setup(sql)) == count
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "",
+        "-- only a comment",
+        "DROP INDEX attendance_pkey",
+        "CREATE TABLE t (x int)",
+        "CREATE INDEX CONCURRENTLY ON t (x)",
+        "CREATE INDEX ON t (x); DELETE FROM t",
+        "SELECT 1",
+    ],
+)
+def test_ensure_setup_rejects_anything_else(sql):
+    with pytest.raises(db.UnsafeQueryError):
+        db.ensure_setup(sql)
+
+
 @pytest.mark.integration
 @pytest.mark.skipif(not os.environ.get(db.DSN_ENV), reason="needs SQD_DATABASE_URL")
 def test_check_finds_each_rule_on_its_demo_example():

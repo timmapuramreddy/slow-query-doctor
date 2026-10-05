@@ -51,6 +51,41 @@ def ensure_select(sql: str) -> str:
     return stripped
 
 
+_SETUP_STATEMENT = re.compile(r"(create\s+(unique\s+)?index|create\s+extension|analyze)\b", re.I)
+_CONCURRENTLY = re.compile(r"\bconcurrently\b", re.I)
+
+
+def ensure_setup(sql: str) -> list[str]:
+    """Split a `compare --setup` file into statements, or raise if one is not allowed.
+
+    Only CREATE INDEX, CREATE EXTENSION and ANALYZE: what an index fix needs. They run in
+    the comparison's transaction, which is always rolled back.
+    """
+    text = _BLOCK_COMMENT.sub(" ", _LINE_COMMENT.sub(" ", sql))
+    # Blank out strings (same length) so a ';' inside one does not split the statement.
+    masked = _STRING.sub(lambda m: "'" + " " * (len(m.group()) - 2) + "'", text)
+    statements: list[str] = []
+    start = 0
+    for end in [i for i, char in enumerate(masked) if char == ";"] + [len(masked)]:
+        statement = text[start:end].strip()
+        start = end + 1
+        if not statement:
+            continue
+        if not _SETUP_STATEMENT.match(statement):
+            first = statement.split(None, 1)[0].upper()
+            raise UnsafeQueryError(
+                f"--setup only allows CREATE INDEX, CREATE EXTENSION and ANALYZE, got {first}."
+            )
+        if _CONCURRENTLY.search(_STRING.sub("''", statement)):
+            raise UnsafeQueryError(
+                "CREATE INDEX CONCURRENTLY cannot run in a transaction; drop CONCURRENTLY."
+            )
+        statements.append(statement)
+    if not statements:
+        raise UnsafeQueryError("The --setup file has no SQL in it.")
+    return statements
+
+
 def explain_analyze(conn: psycopg.Connection, sql: str) -> dict[str, Any]:
     """Run EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) in a read-only transaction and roll back."""
     query = ensure_select(sql)

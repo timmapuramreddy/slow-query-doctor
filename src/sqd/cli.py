@@ -9,7 +9,7 @@ from pathlib import Path
 import psycopg
 
 from sqd import db
-from sqd.compare import compare_queries, format_comparison
+from sqd.compare import compare_queries, compare_with_setup, format_comparison
 from sqd.plan import walk
 from sqd.rules import Finding, run_rules
 
@@ -50,10 +50,20 @@ def positive_int(text: str) -> int:
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
-    queries = [(name, Path(name).read_text()) for name in (args.slow, args.fixed)]
+    if not args.fixed and not args.setup:
+        raise ValueError("Give a fixed query file, --setup FILE, or both.")
+    slow = (args.slow, Path(args.slow).read_text())
+    fixed = (args.fixed, Path(args.fixed).read_text()) if args.fixed else slow
     with psycopg.connect(db.get_dsn(args.dsn)) as conn:
-        before, after = compare_queries(conn, queries, runs=args.runs, warmup=args.warmup)
-    print(format_comparison(before, after, args.warmup))
+        if args.setup:
+            after = (f"{fixed[0]} + {args.setup}", fixed[1])
+            before_t, after_t, setup_ms = compare_with_setup(
+                conn, slow, after, Path(args.setup).read_text(), args.runs, args.warmup
+            )
+            print(format_comparison(before_t, after_t, args.warmup, (args.setup, setup_ms)))
+        else:
+            before_t, after_t = compare_queries(conn, [slow, fixed], args.runs, args.warmup)
+            print(format_comparison(before_t, after_t, args.warmup))
     return 0
 
 
@@ -74,9 +84,23 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("file", help="file with one SELECT statement")
     check.set_defaults(func=cmd_check)
 
-    compare = sub.add_parser("compare", help="time two SELECTs against each other")
+    compare = sub.add_parser(
+        "compare",
+        help="time a slow SELECT against its rewrite, its index fix, or both",
+        description="Time a slow SELECT against a rewrite (fixed) and/or an index fix (--setup). "
+        "--setup runs inside a transaction that is rolled back, but blocks writes to the "
+        "table while it runs: use a test database, not a busy production one.",
+    )
     compare.add_argument("slow", help="file with the original SELECT")
-    compare.add_argument("fixed", help="file with the rewritten SELECT")
+    compare.add_argument(
+        "fixed", nargs="?", help="file with the rewritten SELECT (default: slow again)"
+    )
+    compare.add_argument(
+        "--setup",
+        metavar="FILE",
+        help="CREATE INDEX / CREATE EXTENSION / ANALYZE to apply before timing the fix; "
+        "rolled back afterwards",
+    )
     compare.add_argument(
         "-n", "--runs", type=positive_int, default=5, help="timed runs (default 5)"
     )
