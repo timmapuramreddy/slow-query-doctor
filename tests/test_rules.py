@@ -573,3 +573,25 @@ def test_filter_after_index_treats_equals_any_on_array_cast_as_equality():
     )
     findings = run_rules(plan, _grades_catalog())
     assert findings[0].suggestion.endswith("CREATE INDEX ON grades (assessment, graded_at, score);")
+
+
+def test_date_filter_fires_on_cast_after_at_time_zone(fixture_loader):
+    plan, catalog = fixture_loader("date_filter_at_time_zone")
+    findings = run_rules(plan, catalog)
+    assert [f.title for f in findings] == [
+        "::date on grades.graded_at turns a date range into a full scan"
+    ]
+    # The range keeps the zone, or the day would start at the session's midnight instead.
+    assert (
+        "graded_at >= '2024-03-15 00:00 UTC' AND graded_at < '2024-03-16 00:00 UTC'"
+        in findings[0].suggestion
+    )
+
+
+def test_date_filter_silent_when_at_time_zone_expression_is_indexed():
+    catalog = _expression_index_catalog(
+        "CREATE INDEX x ON public.students USING btree "
+        "((((graded_at AT TIME ZONE 'UTC'::text))::date))"
+    )
+    plan = _seq_scan("(((graded_at AT TIME ZONE 'UTC'::text))::date = '2024-03-15'::date)")
+    assert run_rules(plan, catalog) == []

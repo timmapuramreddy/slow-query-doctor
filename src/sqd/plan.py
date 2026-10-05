@@ -192,9 +192,12 @@ def leading_wildcard_columns(expression: str, columns: list[str]) -> list[tuple[
 DATE_FUNCTIONS = frozenset({"date_trunc", "date_part", "date"})
 
 _EXTRACT = re.compile(r"\bextract\(\s*\w+\s+from\s+([^)]*)\)", re.I)
-_DATE_CAST = re.compile(
-    r"\(?(?:[a-z_][a-z0-9_]*\.)?([a-z_][a-z0-9_]*)\)?"
-    r"::(date|timestamp(?: with(?:out)? time zone)?)\b"
+_DATE_TYPE = r"::(date|timestamp(?: with(?:out)? time zone)?)\b"
+_DATE_CASTS = (
+    # (graded_at)::date
+    re.compile(rf"\(?(?:{_NAME}\.)?({_NAME})\)?{_DATE_TYPE}"),
+    # ((graded_at AT TIME ZONE 'UTC'::text))::date
+    re.compile(rf"\(\((?:{_NAME}\.)?({_NAME}) AT TIME ZONE '[^']*'(?:::[a-z ]+?)?\)\){_DATE_TYPE}"),
 )
 
 
@@ -217,10 +220,14 @@ def date_wrapped_columns(expression: str, columns: list[str]) -> list[tuple[str,
             (col, "EXTRACT()", expression[match.start() : match.end()])
             for col in referenced_columns(match.group(1), columns)
         ]
-    for match in _DATE_CAST.finditer(text):
-        if match.group(1) in columns:
+    for match in (m for pattern in _DATE_CASTS for m in pattern.finditer(text)):
+        if unquote(match.group(1)) in columns:
             found.append(
-                (match.group(1), f"::{match.group(2)}", expression[match.start() : match.end()])
+                (
+                    unquote(match.group(1)),
+                    f"::{match.group(2)}",
+                    expression[match.start() : match.end()],
+                )
             )
     unique: list[tuple[str, str, str]] = []
     for item in found:
