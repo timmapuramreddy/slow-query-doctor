@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from sqd.catalog import Catalog, Index
-from sqd.plan import PlanNode, mask_literals, referenced_columns
+from sqd.plan import PlanNode, mask_literals, quote_name, referenced_columns
 from sqd.rules.base import LARGE_TABLE_ROWS, Finding
 from sqd.rules.missing_index import MAX_KEPT_SHARE, wrapped_columns
 
@@ -78,7 +78,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
             ),
             suggestion=(
                 "Add an index that holds the filter columns too, equality columns first: "
-                f"CREATE INDEX ON {table.name} ({', '.join(columns)});"
+                f"CREATE INDEX ON {quote_name(table.name)} ({', '.join(map(quote_name, columns))});"
             ),
             node=node.summary(),
             time_ms=node.total_time_ms,

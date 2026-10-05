@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from sqd.catalog import Catalog
-from sqd.plan import DATE_FUNCTIONS, PlanNode, function_calls, referenced_columns
+from sqd.plan import DATE_FUNCTIONS, PlanNode, function_calls, quote_name, referenced_columns
 from sqd.rules.base import Finding
 from sqd.rules.missing_index import is_selective_seq_scan
 
@@ -51,7 +51,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
                     suggestion=(
                         f"Compare the bare column if you can (store the value already in the "
                         f"form you search for), or add an index on the expression: "
-                        f"CREATE INDEX ON {table.name} ({expr});"
+                        f"CREATE INDEX ON {quote_name(table.name)} ({expr});"
                     ),
                     node=node.summary(),
                     time_ms=node.total_time_ms,

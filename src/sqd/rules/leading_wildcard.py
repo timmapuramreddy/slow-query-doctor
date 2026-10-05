@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from sqd.catalog import Catalog, Table
-from sqd.plan import PlanNode, leading_wildcard_columns
+from sqd.plan import PlanNode, leading_wildcard_columns, quote_name
 from sqd.rules.base import Finding
 from sqd.rules.missing_index import is_selective_seq_scan
 
@@ -73,7 +73,8 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
                     f"If you know how the value starts, drop the leading wildcard. For "
                     f"'contains' or 'ends with' search, add a trigram index: "
                     f"CREATE EXTENSION IF NOT EXISTS pg_trgm; "
-                    f"CREATE INDEX ON {table.name} USING gin ({col} gin_trgm_ops);"
+                    f"CREATE INDEX ON {quote_name(table.name)} "
+                    f"USING gin ({quote_name(col)} gin_trgm_ops);"
                 ),
                 node=node.summary(),
                 time_ms=node.total_time_ms,
