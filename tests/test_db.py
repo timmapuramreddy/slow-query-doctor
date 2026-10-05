@@ -49,6 +49,33 @@ def test_ensure_select_rejects_anything_else(sql):
 
 
 @pytest.mark.parametrize(
+    "sql, expected",
+    [
+        ("SELECT 'a--b' AS x;", "SELECT 'a--b' AS x"),
+        ("SELECT '/*' AS a, '*/' AS b", "SELECT '/*' AS a, '*/' AS b"),
+        ("SELECT $$;$$ AS x -- trailing", "SELECT $$;$$ AS x"),
+        ("SELECT E'it\\'s; fine' AS x", "SELECT E'it\\'s; fine' AS x"),
+        ('SELECT "delete" FROM t /* drop */', 'SELECT "delete" FROM t'),
+    ],
+)
+def test_ensure_select_keeps_comment_marks_inside_strings(sql, expected):
+    assert db.ensure_select(sql) == expected
+
+
+def test_ensure_setup_keeps_strings_whole_and_splits_only_real_semicolons():
+    sql = (
+        "CREATE INDEX a ON t (x) WHERE note = 'foo--';\n"
+        "ANALYZE t;\n"
+        "CREATE INDEX b ON t ((position($s$;$s$ in body)));"
+    )
+    assert db.ensure_setup(sql) == [
+        "CREATE INDEX a ON t (x) WHERE note = 'foo--'",
+        "ANALYZE t",
+        "CREATE INDEX b ON t ((position($s$;$s$ in body)))",
+    ]
+
+
+@pytest.mark.parametrize(
     "sql, count",
     [
         ("CREATE INDEX ON attendance (enrollment_id);", 1),
