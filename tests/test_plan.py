@@ -64,9 +64,15 @@ def test_date_wrapped_columns_finds_functions_extract_and_casts():
     )
     cols = ["graded_at", "created_on", "due_at", "email"]
     assert date_wrapped_columns(expr, cols) == [
-        ("graded_at", "date_trunc()"),
-        ("created_on", "EXTRACT()"),
-        ("due_at", "::date"),
+        ("graded_at", "date_trunc()", "date_trunc('day'::text, graded_at)"),
+        ("created_on", "EXTRACT()", "EXTRACT(year FROM g.created_on)"),
+        ("due_at", "::date", "(due_at)::date"),
+    ]
+
+
+def test_function_calls_keeps_string_arguments():
+    assert function_calls("(date_trunc('day'::text, graded_at) = 'x')") == [
+        ("date_trunc", "'day'::text, graded_at")
     ]
 
 

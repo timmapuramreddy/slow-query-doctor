@@ -144,8 +144,9 @@ def function_calls(expression: str) -> list[tuple[str, str]]:
     """(function name, argument text) for each call in an expression, outermost first.
 
     Example: "(lower((email)::text) = ''::text)" -> [("lower", "(email)::text")].
+    String arguments are kept: "date_trunc('day'::text, x)" -> [("date_trunc", "'day'::text, x")].
     """
-    text = strip_literals(expression)
+    text = mask_literals(expression)
     calls: list[tuple[str, str]] = []
     for match in _CALL.finditer(text):
         start = match.end()
@@ -157,7 +158,7 @@ def function_calls(expression: str) -> list[tuple[str, str]]:
             elif text[pos] == ")":
                 depth -= 1
             pos += 1
-        calls.append((match.group(1), text[start : pos - 1]))
+        calls.append((match.group(1), expression[start : pos - 1]))
     return calls
 
 
@@ -190,22 +191,31 @@ _DATE_CAST = re.compile(
 )
 
 
-def date_wrapped_columns(expression: str, columns: list[str]) -> list[tuple[str, str]]:
-    """(column, wrapper) for each column inside a date function, EXTRACT, or a cast to a date type.
+def date_wrapped_columns(expression: str, columns: list[str]) -> list[tuple[str, str, str]]:
+    """(column, wrapper, expression) for each column inside a date function, EXTRACT or cast.
 
-    Example: "((graded_at)::date = '2024-03-15'::date)" -> [("graded_at", "::date")].
+    The expression is the exact text, to compare with expression index definitions.
+    Example: "((graded_at)::date = '2024-03-15'::date)"
+    -> [("graded_at", "::date", "(graded_at)::date")].
     """
-    text = strip_literals(expression)
-    found: list[tuple[str, str]] = []
-    for func, args in function_calls(text):
+    text = mask_literals(expression)
+    found: list[tuple[str, str, str]] = []
+    for func, args in function_calls(expression):
         if func in DATE_FUNCTIONS:
-            found += [(col, f"{func}()") for col in referenced_columns(args, columns)]
+            found += [
+                (col, f"{func}()", f"{func}({args})") for col in referenced_columns(args, columns)
+            ]
     for match in _EXTRACT.finditer(text):
-        found += [(col, "EXTRACT()") for col in referenced_columns(match.group(1), columns)]
+        found += [
+            (col, "EXTRACT()", expression[match.start() : match.end()])
+            for col in referenced_columns(match.group(1), columns)
+        ]
     for match in _DATE_CAST.finditer(text):
         if match.group(1) in columns:
-            found.append((match.group(1), f"::{match.group(2)}"))
-    unique: list[tuple[str, str]] = []
+            found.append(
+                (match.group(1), f"::{match.group(2)}", expression[match.start() : match.end()])
+            )
+    unique: list[tuple[str, str, str]] = []
     for item in found:
         if item not in unique:
             unique.append(item)

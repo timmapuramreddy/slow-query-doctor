@@ -312,3 +312,39 @@ def test_date_filter_on_unindexed_column_suggests_index_and_skips_missing_index_
     findings = run_rules(plan, _date_column_catalog(indexed=False))
     assert [f.rule_id for f in findings] == ["non-sargable-date-filter"]
     assert findings[0].suggestion.endswith("CREATE INDEX ON students (graded_at);")
+
+
+def _expression_index_catalog(definition: str) -> Catalog:
+    return Catalog.from_dict(
+        {
+            "students": {
+                "rows": 600_000,
+                "columns": ["id", "graded_at"],
+                "indexes": [
+                    {"name": "g", "columns": ["graded_at"], "definition": "(graded_at)"},
+                    {"name": "x", "columns": [None], "definition": definition},
+                ],
+            }
+        }
+    )
+
+
+def test_date_filter_silent_when_matching_expression_index_exists():
+    catalog = _expression_index_catalog(
+        "CREATE INDEX x ON public.students USING btree (EXTRACT(year FROM graded_at))"
+    )
+    plan = _seq_scan("(EXTRACT(year FROM graded_at) = '2024'::numeric)")
+    assert run_rules(plan, catalog) == []
+
+
+def test_date_filter_fires_when_expression_index_uses_another_precision():
+    # An index on date_trunc('month', ...) cannot serve date_trunc('day', ...).
+    catalog = _expression_index_catalog(
+        "CREATE INDEX x ON public.students USING btree "
+        "(date_trunc('month'::text, (graded_at)::timestamp without time zone))"
+    )
+    plan = _seq_scan(
+        "(date_trunc('day'::text, (graded_at)::timestamp without time zone) = "
+        "'2024-03-15 00:00:00'::timestamp without time zone)"
+    )
+    assert [f.rule_id for f in run_rules(plan, catalog)] == ["non-sargable-date-filter"]

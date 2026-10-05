@@ -44,7 +44,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
         for _, args in function_calls(filter_)
         for col in referenced_columns(args, table.columns)
     }
-    wrapped |= {col for col, _ in date_wrapped_columns(filter_, table.columns)}
+    wrapped |= {col for col, *_ in date_wrapped_columns(filter_, table.columns)}
     wrapped |= {col for col, _ in leading_wildcard_columns(filter_, table.columns)}
     unindexed = [
         col
