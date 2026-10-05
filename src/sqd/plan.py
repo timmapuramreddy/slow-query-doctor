@@ -8,7 +8,18 @@ from dataclasses import dataclass
 from typing import Any
 
 _STRING = re.compile(r"'(?:[^']|'')*'")
-_IDENT = re.compile(r"\b[a-z_][a-z0-9_]*\b")
+# A name that is not a function call.
+_IDENT = re.compile(r"\b[a-z_][a-z0-9_]*\b(?!\s*\()")
+# The type in a cast, so '::date' or '::timestamp with time zone' is not read as a column.
+_CAST_TYPE = re.compile(
+    r"::(?:[a-z_][a-z0-9_]*\.)?(?:(?:timestamp|time) with(?:out)? time zone"
+    r"|character varying|double precision|bit varying|[a-z_][a-z0-9_]*)"
+    r"(?:\([0-9, ]*\))?(?:\[\])*"
+)
+# The field in EXTRACT(year FROM col), which is a keyword, not a column.
+_EXTRACT_FIELD = re.compile(r"\bextract\(\s*\w+\s+from\b", re.I)
+# alias.column, but not schema.function( or ::schema.type.
+_QUALIFIED = re.compile(r"(?<!::)\b([a-z_][a-z0-9_]*)\.([a-z_][a-z0-9_]*)\b(?!\s*\()")
 
 
 @dataclass(frozen=True)
@@ -33,6 +44,13 @@ class PlanNode:
     @property
     def filter(self) -> str | None:
         return self.raw.get("Filter")
+
+    @property
+    def own_filter(self) -> str | None:
+        """Filter with this table's alias dropped and other tables' columns hidden (localize)."""
+        if self.filter is None:
+            return None
+        return localize(self.filter, {n for n in (self.alias, self.relation) if n})
 
     @property
     def loops(self) -> int:
@@ -81,11 +99,39 @@ def strip_literals(expression: str) -> str:
     return _STRING.sub("''", expression)
 
 
+def mask_literals(expression: str) -> str:
+    """Blank out the inside of quoted strings, keeping every character position the same."""
+    return _STRING.sub(lambda m: "'" + " " * (len(m.group()) - 2) + "'", expression)
+
+
+def localize(expression: str, names: set[str]) -> str:
+    """One table's view of an expression: drop its own alias, hide other tables' columns.
+
+    Join conditions and correlated subqueries name columns of other tables with their alias.
+    Those become '$0' so a column of the same name is not mistaken for this table's.
+    Example with names {"e"}: "(e.course_id = c.id)" -> "(course_id = $0)".
+    """
+    masked = mask_literals(expression)
+    parts: list[str] = []
+    last = 0
+    for match in _QUALIFIED.finditer(masked):
+        parts.append(expression[last : match.start()])
+        parts.append(match.group(2) if match.group(1) in names else "$0")
+        last = match.end()
+    parts.append(expression[last:])
+    return "".join(parts)
+
+
 def referenced_columns(expression: str, columns: list[str]) -> list[str]:
-    """Columns of a table that appear in a plan expression such as a Filter, in order."""
+    """Columns of a table that appear in a plan expression such as a Filter, in order.
+
+    Cast types, function names and EXTRACT fields are skipped, so a column called "date"
+    is not found in '::date' or date(...).
+    """
     known = set(columns)
     seen: list[str] = []
-    for token in _IDENT.findall(strip_literals(expression)):
+    text = _EXTRACT_FIELD.sub("extract(", _CAST_TYPE.sub("", strip_literals(expression)))
+    for token in _IDENT.findall(text):
         if token in known and token not in seen:
             seen.append(token)
     return seen

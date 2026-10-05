@@ -2,11 +2,12 @@ from sqd.catalog import Catalog
 from sqd.rules import run_rules
 
 
-def _seq_scan(filter_: str, kept: int = 3, removed: int = 999_997) -> dict:
+def _seq_scan(filter_: str, kept: int = 3, removed: int = 999_997, alias: str = "students") -> dict:
     return {
         "Plan": {
             "Node Type": "Seq Scan",
             "Relation Name": "students",
+            "Alias": alias,
             "Filter": filter_,
             "Actual Rows": kept,
             "Rows Removed by Filter": removed,
@@ -78,6 +79,26 @@ def test_missing_index_ignores_column_inside_function():
     # An index on first_name would not help lower(first_name); do not suggest one.
     plan = _seq_scan("(lower(first_name) = 'asha'::text)")
     assert [f.rule_id for f in run_rules(plan, _catalog())] == []
+
+
+def test_missing_index_ignores_outer_column_with_the_same_name():
+    # Correlated subquery: o.first_name belongs to the outer query, not to this scan.
+    plan = _seq_scan("((email)::text = o.first_name)", alias="s")
+    assert run_rules(plan, _catalog()) == []
+
+
+def test_missing_index_does_not_read_a_cast_as_a_column_named_date():
+    catalog = Catalog.from_dict(
+        {
+            "students": {
+                "rows": 600_000,
+                "columns": ["id", "graded_at", "date"],
+                "indexes": [{"name": "g", "columns": ["graded_at"], "definition": "(graded_at)"}],
+            }
+        }
+    )
+    plan = _seq_scan("((graded_at)::date = '2024-03-15'::date)")
+    assert [f.rule_id for f in run_rules(plan, catalog)] == ["non-sargable-date-filter"]
 
 
 # Rule 2: function on indexed column

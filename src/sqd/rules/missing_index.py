@@ -34,20 +34,21 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
     if not is_selective_seq_scan(node, catalog):
         return []
     table = catalog.get(node.relation)
-    assert table is not None and node.filter is not None
+    filter_ = node.own_filter
+    assert table is not None and filter_ is not None
 
     # Columns inside a function call, a date cast or a leading-wildcard LIKE belong to rules
     # 2, 3 and 5: a plain index would not help them.
     wrapped = {
         col
-        for _, args in function_calls(node.filter)
+        for _, args in function_calls(filter_)
         for col in referenced_columns(args, table.columns)
     }
-    wrapped |= {col for col, _ in date_wrapped_columns(node.filter, table.columns)}
-    wrapped |= {col for col, _ in leading_wildcard_columns(node.filter, table.columns)}
+    wrapped |= {col for col, _ in date_wrapped_columns(filter_, table.columns)}
+    wrapped |= {col for col, _ in leading_wildcard_columns(filter_, table.columns)}
     unindexed = [
         col
-        for col in referenced_columns(node.filter, table.columns)
+        for col in referenced_columns(filter_, table.columns)
         if col not in wrapped and not table.has_leading_index(col)
     ]
     if not unindexed:

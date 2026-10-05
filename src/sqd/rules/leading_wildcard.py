@@ -22,10 +22,11 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
     if not is_selective_seq_scan(node, catalog):
         return []
     table = catalog.get(node.relation)
-    assert table is not None and node.filter is not None
+    filter_ = node.own_filter
+    assert table is not None and filter_ is not None
 
     findings: list[Finding] = []
-    for col, pattern in leading_wildcard_columns(node.filter, table.columns):
+    for col, pattern in leading_wildcard_columns(filter_, table.columns):
         if _has_trigram_index(table, col):
             continue
         index_note = (

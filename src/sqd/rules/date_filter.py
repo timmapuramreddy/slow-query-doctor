@@ -15,11 +15,12 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
     if not is_selective_seq_scan(node, catalog):
         return []
     table = catalog.get(node.relation)
-    assert table is not None and node.filter is not None
+    filter_ = node.own_filter
+    assert table is not None and filter_ is not None
 
     findings: list[Finding] = []
     seen: set[str] = set()
-    for col, wrapper in date_wrapped_columns(node.filter, table.columns):
+    for col, wrapper in date_wrapped_columns(filter_, table.columns):
         if col in seen:
             continue
         seen.add(col)
