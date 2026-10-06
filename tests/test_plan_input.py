@@ -7,7 +7,7 @@ import pytest
 
 from sqd import cli, db
 from sqd.catalog import Catalog
-from sqd.plan import parse_explain, relations
+from sqd.plan import parse_explain, quote_name, relations
 from sqd.rules import run_rules
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -161,11 +161,13 @@ def test_printed_catalog_sql_keeps_hostile_names_inside_the_literal():
     payload = "x\\'\n; CREATE TEMP TABLE injected (); --"
     with psycopg.connect(db.get_dsn()) as conn:
         conn.execute("SET LOCAL standard_conforming_strings = off")
-        conn.execute('CREATE TEMP TABLE "back\\slash" (id int)')
-        row = conn.execute(db.catalog_sql({payload, "back\\slash"})).fetchone()
+        names = {"back\\slash", "price$n0", "a$n0$b$n1"}  # the last two end in a tag
+        for name in names:
+            conn.execute(f"CREATE TEMP TABLE {quote_name(name)} (id int)")
+        row = conn.execute(db.catalog_sql({payload} | names)).fetchone()
         injected = conn.execute("SELECT to_regclass('pg_temp.injected')").fetchone()[0]
         conn.rollback()
-    assert list(row[0]) == ["back\\slash"]
+    assert sorted(row[0]) == sorted(names)
     assert injected is None
 
 

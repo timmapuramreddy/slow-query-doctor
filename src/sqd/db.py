@@ -204,12 +204,17 @@ def load_catalog(conn: psycopg.Connection, table_names: set[str]) -> Catalog:
 
 
 def _dollar_quote(text: str) -> str:
-    """$n0$text$n0$ with a tag not inside the text. Unlike '...', no setting such as
-    standard_conforming_strings changes how it reads, so a name cannot end it early."""
+    """$n0$text$n0$, with a tag that first appears where it closes.
+
+    Unlike '...', no setting such as standard_conforming_strings changes how it reads,
+    so a name cannot end it early.
+    """
     if "\0" in text:
         raise ValueError("A table name in the plan contains a NUL character.")
     n = 0
-    while f"$n{n}$" in text:
+    # The closing tag must be the first match after the opener, also when the name ends
+    # in part of it (a name ending in "$n0" would otherwise close the quote early).
+    while (text + f"$n{n}$").find(f"$n{n}$") != len(text):
         n += 1
     return f"$n{n}${text}$n{n}$"
 
