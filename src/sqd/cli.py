@@ -18,7 +18,7 @@ from sqd.rules import Finding, run_rules
 def format_findings(findings: list[Finding], execution_ms: float | None) -> str:
     """Plain-text report for the terminal. execution_ms is None if the plan has no time."""
     if execution_ms is None:
-        lines = ["Query time is not in the plan (EXPLAIN ran with SUMMARY OFF)."]
+        lines = ["Query time is not in the plan (no Execution Time; SUMMARY OFF leaves it out)."]
     else:
         lines = [f"Query ran in {execution_ms:.1f} ms."]
     if not findings:
