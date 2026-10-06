@@ -232,6 +232,7 @@ def catalog_sql(table_names: set[str]) -> str:
 
 DEMO_ROWS_PER_SCALE = 1_950_000  # students, enrollments, attendance, grades
 DEMO_FIXED_ROWS = 500  # courses
+MAX_DEMO_SCALE = 2147  # ids are integer: 1,000,000 attendance rows x 2148 would overflow
 
 
 def load_demo(conn: psycopg.Connection, scale: int = 1) -> None:
@@ -239,9 +240,13 @@ def load_demo(conn: psycopg.Connection, scale: int = 1) -> None:
 
     scale multiplies every table but courses; scale 1 is the data the tests expect.
     """
+    if not 1 <= scale <= MAX_DEMO_SCALE:
+        raise ValueError(f"Scale must be 1 to {MAX_DEMO_SCALE}, got {scale}.")
     sql_dir = resources.files("sqd") / "sql"
     with conn.cursor() as cur:
         cur.execute("SELECT set_config('sqd.scale', %s, false)", (str(scale),))
         for name in ("schema.sql", "seed.sql"):
             cur.execute((sql_dir / name).read_text())
+        # seed.sql keeps the setting for the session; drop it so a later run defaults to 1.
+        cur.execute("RESET sqd.scale")
     conn.commit()

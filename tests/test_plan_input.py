@@ -68,6 +68,11 @@ def test_parse_explain_accepts_analyze_with_timing_off():
         ('{"Plan": {"Actual Rows": 1, "Relation Name": 5}}', '"Relation Name" should be text'),
         ('{"Plan": {"Actual Rows": 1, "Hash Cond": ["x"]}}', '"Hash Cond" should be text'),
         ('{"Plan": {"Actual Rows": true}}', '"Actual Rows" should be a number'),
+        ('{"Plan": {"Actual Rows": 1e400}}', '"Actual Rows" should be a number'),
+        ('{"Plan": {"Actual Rows": NaN}}', '"Actual Rows" should be a number'),
+        ('{"Plan": {"Actual Rows": 1e308}}', '"Actual Rows" should be a number'),
+        ('{"Plan": {"Actual Rows": -5}}', '"Actual Rows" should be a number'),
+        ('{"Plan": {"Actual Rows": 1}, "Execution Time": 1' + "0" * 309 + "}", "Execution Time"),
         ('{"Plan": {"Actual Rows": 1}, "Execution Time": "fast"}', '"Execution Time" should'),
     ],
 )
@@ -212,3 +217,29 @@ def test_load_catalog_finds_mixed_case_tables():
     table = catalog.tables["Mixed Case"]
     assert table.columns == ["id", "Email"]
     assert [ix.columns for ix in table.indexes] == [[None]]
+
+
+def test_check_plan_says_when_the_plan_has_no_execution_time(tmp_path, capsys, no_db):
+    # EXPLAIN (ANALYZE, TIMING OFF, SUMMARY OFF) has row counts but no Execution Time.
+    plan = dict(_fixture("deep_offset_slow")["plan"])
+    del plan["Execution Time"]
+    assert cli.main(_write_inputs(tmp_path, [plan])) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("Query time is not in the plan")
+    assert "deep-offset" in out
+
+
+def test_catalog_sql_for_a_plan_without_tables_gives_an_empty_catalog(tmp_path, capsys, no_db):
+    plan = {"Plan": {"Node Type": "Function Scan", "Actual Rows": 1}}
+    (tmp_path / "plan.json").write_text(json.dumps([plan]))
+    assert cli.main(["catalog-sql", str(tmp_path / "plan.json")]) == 0
+    assert "ARRAY[]::text[]" in capsys.readouterr().out
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not os.environ.get(db.DSN_ENV), reason="needs SQD_DATABASE_URL")
+def test_printed_catalog_sql_without_tables_returns_an_empty_object():
+    with psycopg.connect(db.get_dsn()) as conn:
+        row = conn.execute(db.catalog_sql(set())).fetchone()
+        conn.rollback()
+    assert row[0] == {}

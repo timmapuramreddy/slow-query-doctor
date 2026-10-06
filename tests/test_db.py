@@ -139,5 +139,29 @@ def test_demo_load_passes_the_scale_on(monkeypatch, capsys):
     assert cli.main(["--dsn", "postgresql://x", "demo", "load", "--scale", "10"]) == 0
     assert loaded == [("conn", 10)]
     assert "19,500,500 rows" in capsys.readouterr().out
-    with pytest.raises(SystemExit):
-        cli.main(["demo", "load", "--scale", "0"])
+    for bad in ("0", "2148"):  # 1,000,000 x 2148 attendance ids overflow integer
+        with pytest.raises(SystemExit):
+            cli.main(["demo", "load", "--scale", bad])
+
+
+def test_load_demo_checks_the_scale_and_does_not_leave_it_set():
+    class FakeConn:
+        def __init__(self):
+            self.sql = []
+
+        def cursor(self):
+            import contextlib
+
+            return contextlib.nullcontext(self)
+
+        def execute(self, sql, params=None):
+            self.sql.append(sql)
+
+        def commit(self):
+            self.sql.append("COMMIT")
+
+    with pytest.raises(ValueError, match="2147"):
+        db.load_demo(FakeConn(), 2148)
+    conn = FakeConn()
+    db.load_demo(conn, 2)
+    assert conn.sql[-2:] == ["RESET sqd.scale", "COMMIT"]
