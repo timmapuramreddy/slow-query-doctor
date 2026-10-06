@@ -70,6 +70,9 @@ def test_parse_explain_accepts_analyze_with_timing_off():
         ('{"Plan": {"Actual Rows": true}}', '"Actual Rows" should be a number'),
         ('{"Plan": {"Actual Rows": 1e400}}', '"Actual Rows" should be a number'),
         ('{"Plan": {"Actual Rows": NaN}}', '"Actual Rows" should be a number'),
+        ('{"Plan": {"Actual Rows": 1e308}}', '"Actual Rows" should be a number'),
+        ('{"Plan": {"Actual Rows": -5}}', '"Actual Rows" should be a number'),
+        ('{"Plan": {"Actual Rows": 1}, "Execution Time": 1' + "0" * 309 + "}", "Execution Time"),
         ('{"Plan": {"Actual Rows": 1}, "Execution Time": "fast"}', '"Execution Time" should'),
     ],
 )

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -140,9 +139,18 @@ def parse_explain(text: str | bytes) -> dict[str, Any]:
     return data
 
 
+# Real counts and times are far below this; the cap keeps rows x loops finite.
+MAX_PLAN_NUMBER = 1e15
+
+
 def _is_number(value: object) -> bool:
-    """True for a finite int or float; json reads 1e400 as inf and NaN as nan."""
-    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+    """True for an int or float from 0 to MAX_PLAN_NUMBER. Comparing (not converting) also
+    rejects NaN, inf (json reads 1e400 as inf) and ints too big for a float."""
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and 0 <= value <= MAX_PLAN_NUMBER
+    )
 
 
 def _type_problem(node: dict[str, Any], where: str) -> str | None:
@@ -156,7 +164,7 @@ def _type_problem(node: dict[str, Any], where: str) -> str | None:
             (" Cond", "Filter")
         )
         if number and not _is_number(value):
-            return f'"{key}" should be a number in {where}'
+            return f'"{key}" should be a number from 0 to 1e15 in {where}'
         if text and not number and not isinstance(value, str):
             return f'"{key}" should be text in {where}'
     return None
