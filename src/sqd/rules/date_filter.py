@@ -7,7 +7,7 @@ import re
 from sqd.catalog import Catalog
 from sqd.plan import PlanNode, date_wrapped_columns, quote_name
 from sqd.rules.base import Finding
-from sqd.rules.missing_index import is_selective_seq_scan
+from sqd.rules.missing_index import is_selective_seq_scan, table_rows
 
 RULE_ID = "non-sargable-date-filter"
 
@@ -24,6 +24,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
     table = catalog.get(node.relation)
     filter_ = node.own_filter
     assert table is not None and filter_ is not None
+    rows = table_rows(node, table)
 
     wrapped = date_wrapped_columns(filter_, table.columns)
     # Only the outermost expressions count: a cast inside date_trunc() is part of it.
@@ -65,7 +66,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
                 title=f"{wrapper} on {table.name}.{col} turns a date range into a full scan",
                 explanation=(
                     f"The filter changes {col} with {wrapper} before comparing it. {index_note} "
-                    f"computed it for every row of {table.name} (about {table.rows:,})."
+                    f"computed it for every row of {table.name} (about {rows:,})."
                 ),
                 suggestion=(
                     f"Compare the bare column with a half-open range, for example "

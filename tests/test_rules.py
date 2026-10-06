@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from sqd.catalog import Catalog
 from sqd.rules import run_rules
 
@@ -63,7 +65,32 @@ def test_missing_index_silent_after_index_is_added(fixture_loader):
 
 
 def test_missing_index_silent_on_small_table():
-    assert run_rules(_seq_scan("(status = 'x'::text)"), _catalog(rows=500)) == []
+    plan = _seq_scan("(status = 'x'::text)", kept=3, removed=497)
+    assert run_rules(plan, _catalog(rows=500)) == []
+
+
+def test_rules_use_the_rows_a_scan_read_when_the_table_was_never_analyzed(fixture_loader):
+    # reltuples = -1 reaches the catalog as 0 rows. The plan shows the table is big:
+    # a parallel scan of 3 loops each read 333,333 rows.
+    plan, catalog = fixture_loader("missing_index_slow")
+    catalog.tables["attendance"] = replace(catalog.tables["attendance"], rows=0)
+    findings = run_rules(plan, catalog)
+    assert [f.rule_id for f in findings] == ["missing-index"]
+    assert "about 999,999" in findings[0].explanation
+
+
+def test_join_rule_uses_the_rows_a_scan_read_when_the_table_was_never_analyzed(fixture_loader):
+    plan, catalog = fixture_loader("join_key_slow")
+    catalog.tables["enrollments"] = replace(catalog.tables["enrollments"], rows=0)
+    assert [f.rule_id for f in run_rules(plan, catalog)] == ["missing-index"]
+
+
+def test_a_small_table_scanned_once_per_outer_row_is_still_small():
+    # Inside a nested loop, a 500-row table is read 1,000 times: 500,000 rows in total,
+    # but one pass is 500 rows.
+    plan = _seq_scan("(status = 'x'::text)", kept=0, removed=500)
+    plan["Plan"]["Actual Loops"] = 1000
+    assert run_rules(plan, _catalog(rows=0)) == []
 
 
 def test_missing_index_silent_when_filter_keeps_most_rows():

@@ -20,12 +20,24 @@ RULE_ID = "missing-index"
 MAX_KEPT_SHARE = 0.10
 
 
+def table_rows(scan: PlanNode, table: Table) -> int:
+    """Rows in the table: the catalog estimate, or what one pass of this Seq Scan read if more.
+
+    A never-analyzed table has reltuples = -1, which the catalog reports as 0, and stale
+    statistics undercount. Workers of a parallel scan share one pass, so their loops add up;
+    other loops (a scan inside a nested loop) each read the whole table again.
+    """
+    read = scan.actual_rows + scan.rows_removed_by_filter
+    one_pass = read if scan.raw.get("Parallel Aware") else read // scan.loops
+    return max(table.rows, one_pass)
+
+
 def is_selective_seq_scan(node: PlanNode, catalog: Catalog) -> bool:
     """Seq Scan with a filter on a large table that kept at most MAX_KEPT_SHARE of the rows."""
     if node.node_type != "Seq Scan" or not node.filter:
         return False
     table = catalog.get(node.relation)
-    if table is None or table.rows < LARGE_TABLE_ROWS:
+    if table is None or table_rows(node, table) < LARGE_TABLE_ROWS:
         return False
     scanned = node.actual_rows + node.rows_removed_by_filter
     return scanned > 0 and node.actual_rows / scanned <= MAX_KEPT_SHARE
@@ -61,6 +73,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
     table = catalog.get(node.relation)
     filter_ = node.own_filter
     assert table is not None and filter_ is not None
+    rows = table_rows(node, table)
 
     unindexed = unindexed_columns(filter_, table)
     if not unindexed:
@@ -75,7 +88,8 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
             rule_id=RULE_ID,
             title=f"No index on {table.name}.{column}",
             explanation=(
-                f"PostgreSQL read every row of {table.name} (about {table.rows:,}) one by one "
+                f"PostgreSQL read every row of {table.name} (about {rows:,}) "
+                "one by one "
                 f"and kept {node.actual_rows:,} ({kept}). There is no index on {column}, "
                 "so it has no shortcut to the matching rows."
             ),
@@ -125,7 +139,7 @@ def check_join(node: PlanNode, catalog: Catalog) -> list[Finding]:
             continue
         table = catalog.get(scan.relation)
         read = scan.actual_rows
-        if table is None or table.rows < LARGE_TABLE_ROWS or read == 0:
+        if table is None or table_rows(scan, table) < LARGE_TABLE_ROWS or read == 0:
             continue
         if max(node.actual_rows, sides[1 - i].actual_rows) > MAX_KEPT_SHARE * read:
             continue
