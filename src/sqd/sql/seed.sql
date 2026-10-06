@@ -1,7 +1,10 @@
--- Fills the school schema with synthetic rows (about 1.9 million in total).
+-- Fills the school schema with synthetic rows (about 1.95 million at scale 1).
+-- sqd.scale multiplies students, enrollments, attendance and grades; courses stay at 500
+-- (course codes are 4 digits). Unset, it is 1. Scale 1 always gives the same data.
 -- setseed() makes random() repeat the same sequence, so every run gives the same data.
 -- No real people: names come from short fixed lists.
 
+SELECT set_config('sqd.scale', coalesce(nullif(current_setting('sqd.scale', true), ''), '1'), false);
 SELECT setseed(0.42);
 
 INSERT INTO students (id, first_name, last_name, email, birth_date, enrolled_on, status)
@@ -15,7 +18,7 @@ SELECT
     date '2000-01-01' + (random() * 3650)::int,
     date '2018-08-01' + (random() * 2500)::int,
     (ARRAY['active','active','active','active','graduated','withdrawn'])[1 + floor(random() * 6)::int]
-FROM generate_series(1, 50000) AS g;
+FROM generate_series(1, 50000 * current_setting('sqd.scale')::int) AS g;
 
 INSERT INTO courses (id, code, title, department, credits)
 SELECT
@@ -29,27 +32,27 @@ FROM generate_series(1, 500) AS g;
 INSERT INTO enrollments (id, student_id, course_id, term, enrolled_at)
 SELECT
     g,
-    1 + floor(random() * 50000)::int,
+    1 + floor(random() * 50000 * current_setting('sqd.scale')::int)::int,
     1 + floor(random() * 500)::int,
     (ARRAY['2023-fall','2024-spring','2024-fall','2025-spring','2025-fall'])[1 + (g % 5)],
     timestamptz '2023-08-01' + random() * interval '800 days'
-FROM generate_series(1, 300000) AS g;
+FROM generate_series(1, 300000 * current_setting('sqd.scale')::int) AS g;
 
 INSERT INTO attendance (id, enrollment_id, class_date, status)
 SELECT
     g,
-    1 + floor(random() * 300000)::int,
+    1 + floor(random() * 300000 * current_setting('sqd.scale')::int)::int,
     date '2023-09-01' + (random() * 700)::int,
     (ARRAY['present','present','present','present','present','late','absent'])[1 + floor(random() * 7)::int]
-FROM generate_series(1, 1000000) AS g;
+FROM generate_series(1, 1000000 * current_setting('sqd.scale')::int) AS g;
 
 INSERT INTO grades (id, enrollment_id, assessment, score, graded_at)
 SELECT
     g,
-    1 + floor(random() * 300000)::int,
+    1 + floor(random() * 300000 * current_setting('sqd.scale')::int)::int,
     (ARRAY['quiz','homework','midterm','project','final'])[1 + (g % 5)],
     round((40 + random() * 60)::numeric, 2),
     timestamptz '2023-09-01' + random() * interval '700 days'
-FROM generate_series(1, 600000) AS g;
+FROM generate_series(1, 600000 * current_setting('sqd.scale')::int) AS g;
 
 ANALYZE;

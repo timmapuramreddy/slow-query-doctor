@@ -102,9 +102,10 @@ def cmd_compare(args: argparse.Namespace) -> int:
 
 
 def cmd_demo_load(args: argparse.Namespace) -> int:
-    print("Creating the school schema and loading synthetic data (about 1.9M rows)...")
+    rows = db.DEMO_ROWS_PER_SCALE * args.scale + db.DEMO_FIXED_ROWS
+    print(f"Creating the school schema and loading synthetic data ({rows:,} rows)...")
     with psycopg.connect(db.get_dsn(args.dsn)) as conn:
-        db.load_demo(conn)
+        db.load_demo(conn, args.scale)
     print("Done.")
     return 0
 
@@ -170,6 +171,12 @@ def build_parser() -> argparse.ArgumentParser:
     demo = sub.add_parser("demo", help="demo database commands")
     demo_sub = demo.add_subparsers(dest="demo_command", required=True)
     load = demo_sub.add_parser("load", help="create and fill the synthetic school database")
+    load.add_argument(
+        "--scale",
+        type=positive_int,
+        default=1,
+        help="multiply the row counts (courses stay at 500); 1 is what the tests expect",
+    )
     load.set_defaults(func=cmd_demo_load)
     return parser
 

@@ -214,10 +214,18 @@ def catalog_sql(table_names: set[str]) -> str:
     )
 
 
-def load_demo(conn: psycopg.Connection) -> None:
-    """Create the school schema and fill it with synthetic data. Drops existing demo tables."""
+DEMO_ROWS_PER_SCALE = 1_950_000  # students, enrollments, attendance, grades
+DEMO_FIXED_ROWS = 500  # courses
+
+
+def load_demo(conn: psycopg.Connection, scale: int = 1) -> None:
+    """Create the school schema and fill it with synthetic data. Drops existing demo tables.
+
+    scale multiplies every table but courses; scale 1 is the data the tests expect.
+    """
     sql_dir = resources.files("sqd") / "sql"
     with conn.cursor() as cur:
+        cur.execute("SELECT set_config('sqd.scale', %s, false)", (str(scale),))
         for name in ("schema.sql", "seed.sql"):
             cur.execute((sql_dir / name).read_text())
     conn.commit()

@@ -96,6 +96,8 @@ sqd check examples/01-missing-index/slow.sql
 
 The demo database is a made-up school: students, courses, enrollments, attendance, grades. All rows are generated in SQL with a fixed seed, so everyone gets the same data. No real people.
 
+`sqd demo load --scale 10` loads ten times the rows (about 19.5M, 1.7 GB, a few minutes) so slow queries are slower and fixes show bigger gaps. Courses stay at 500. The tests expect scale 1.
+
 ## Share a slow query
 
 You can check a slow query from your own database without giving anyone access to it. Save its plan and some table info as two files, then run `sqd check --plan` on them, or send them to someone who has `sqd`.

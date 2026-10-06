@@ -124,3 +124,20 @@ def test_check_finds_each_rule_on_its_demo_example():
             catalog = db.load_catalog(conn, {n.relation for n in walk(plan) if n.relation})
             found[name] = [f.rule_id for f in run_rules(plan, catalog)]
     assert found == EXPECTED
+
+
+def test_demo_load_passes_the_scale_on(monkeypatch, capsys):
+    import contextlib
+
+    import psycopg
+
+    from sqd import cli
+
+    loaded = []
+    monkeypatch.setattr(psycopg, "connect", lambda dsn: contextlib.nullcontext("conn"))
+    monkeypatch.setattr(db, "load_demo", lambda conn, scale: loaded.append((conn, scale)))
+    assert cli.main(["--dsn", "postgresql://x", "demo", "load", "--scale", "10"]) == 0
+    assert loaded == [("conn", 10)]
+    assert "19,500,500 rows" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        cli.main(["demo", "load", "--scale", "0"])
