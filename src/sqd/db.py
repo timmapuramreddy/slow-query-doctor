@@ -9,7 +9,7 @@ from typing import Any
 
 import psycopg
 
-from sqd.catalog import Catalog, Index, Table
+from sqd.catalog import Catalog
 
 DSN_ENV = "SQD_DATABASE_URL"
 
@@ -169,55 +169,49 @@ def explain_analyze(conn: psycopg.Connection, sql: str) -> dict[str, Any]:
     return row[0][0]
 
 
+# One JSON object in the Catalog.from_dict shape: {table: {rows, columns, indexes}}.
+# Names are plan "Relation Name" values (unquoted), so quote_ident keeps their case.
+# A null index column is an expression. Read-only: it only reads pg_catalog.
 _CATALOG_SQL = """
-SELECT c.relname,
-       greatest(c.reltuples, 0)::bigint,
-       array(SELECT a.attname::text FROM pg_attribute a
-             WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-             ORDER BY a.attnum),
-       coalesce(json_agg(json_build_object(
-           'name', ic.relname,
-           'columns', array(SELECT coalesce(a.attname::text, '')
-                            FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord)
-                            LEFT JOIN pg_attribute a
-                              ON a.attrelid = c.oid AND a.attnum = k.attnum
-                            ORDER BY k.ord),
-           'definition', pg_get_indexdef(i.indexrelid)))
-         FILTER (WHERE i.indexrelid IS NOT NULL), '[]'::json)
-FROM pg_class c
-LEFT JOIN pg_index i ON i.indrelid = c.oid
-LEFT JOIN pg_class ic ON ic.oid = i.indexrelid
-WHERE c.oid = to_regclass(%s)
-GROUP BY c.oid, c.relname, c.reltuples
+SELECT coalesce(json_object_agg(c.relname, json_build_object(
+    'rows', greatest(c.reltuples, 0)::bigint,
+    'columns', array(SELECT a.attname::text FROM pg_attribute a
+                     WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+                     ORDER BY a.attnum),
+    'indexes', coalesce((
+        SELECT json_agg(json_build_object(
+            'name', ic.relname,
+            'columns', array(SELECT a.attname::text
+                             FROM unnest(i.indkey::int2[]) WITH ORDINALITY AS k(attnum, ord)
+                             LEFT JOIN pg_attribute a
+                               ON a.attrelid = c.oid AND a.attnum = k.attnum
+                             ORDER BY k.ord),
+            'definition', pg_get_indexdef(i.indexrelid)) ORDER BY ic.relname)
+        FROM pg_index i JOIN pg_class ic ON ic.oid = i.indexrelid
+        WHERE i.indrelid = c.oid), '[]'::json))), '{}'::json)
+FROM unnest(%s::text[]) AS t(name)
+JOIN pg_class c ON c.oid = to_regclass(quote_ident(t.name))
 """
 
 
 def load_catalog(conn: psycopg.Connection, table_names: set[str]) -> Catalog:
     """Read row estimates, columns and indexes for the given tables."""
-    tables: dict[str, Table] = {}
     with conn.cursor() as cur:
-        for name in sorted(table_names):
-            cur.execute(_CATALOG_SQL, (name,))
-            row = cur.fetchone()
-            if row is None:
-                continue
-            relname, rows, columns, indexes = row
-            tables[relname] = Table(
-                name=relname,
-                rows=rows,
-                columns=list(columns),
-                # An empty column name means that index position is an expression.
-                indexes=[
-                    Index(
-                        name=ix["name"],
-                        columns=[c or None for c in ix["columns"]],
-                        definition=ix["definition"],
-                    )
-                    for ix in indexes
-                ],
-            )
+        cur.execute(_CATALOG_SQL, (sorted(table_names),))
+        row = cur.fetchone()
     conn.rollback()
-    return Catalog(tables=tables)
+    return Catalog.from_dict(row[0] if row else {})
+
+
+def catalog_sql(table_names: set[str]) -> str:
+    """The catalog query with the table names filled in, for people to run on their own DB."""
+    names = ", ".join("'" + name.replace("'", "''") + "'" for name in sorted(table_names))
+    return (
+        "-- Slow Query Doctor catalog query. Read-only: it reads row estimates, column names\n"
+        "-- and index definitions from pg_catalog for the tables in your plan.\n"
+        "-- Run it with: psql -XqAt -f catalog.sql -o catalog.json"
+        + _CATALOG_SQL.replace("%s", f"ARRAY[{names}]")
+    )
 
 
 def load_demo(conn: psycopg.Connection) -> None:

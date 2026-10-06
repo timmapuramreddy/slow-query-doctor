@@ -19,6 +19,7 @@ Found 1 problem(s):
 
 - `sqd check <file.sql>` runs PostgreSQL's `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and reads the plan.
 - Fixed rules find the problem, so every answer can be checked. No AI in v1.
+- `sqd check --plan plan.json` reads a plan someone saved on their own database. It never connects to a database. See [Share a slow query](#share-a-slow-query).
 - Only single `SELECT` statements are accepted, and they run in a read-only transaction that is rolled back. `EXPLAIN ANALYZE` really executes the query, so this matters.
 
 Then prove the fix:
@@ -94,6 +95,35 @@ sqd check examples/01-missing-index/slow.sql
 ```
 
 The demo database is a made-up school: students, courses, enrollments, attendance, grades. All rows are generated in SQL with a fixed seed, so everyone gets the same data. No real people.
+
+## Share a slow query
+
+You can check a slow query from your own database without giving anyone access to it. Save its plan and some table info as two files, then run `sqd check --plan` on them, or send them to someone who has `sqd`.
+
+1. Save the plan as JSON. `EXPLAIN ANALYZE` really runs the query, so use it on a `SELECT`, or on a test copy of the database for anything that writes.
+
+   ```
+   psql -XqAt -c "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT ..." > plan.json
+   ```
+
+   Text-format `EXPLAIN` output is not supported. `-XqAt` makes psql print the raw JSON with no table borders.
+
+2. Make the table info query and run it on the same database. It only reads `pg_catalog`: row estimates, column names and index definitions for the tables in the plan.
+
+   ```
+   sqd catalog-sql plan.json > catalog.sql
+   psql -XqAt -f catalog.sql -o catalog.json
+   ```
+
+3. Check it. No database needed.
+
+   ```
+   sqd check --plan plan.json --catalog catalog.json
+   ```
+
+Without `--catalog`, only the rules that need no table info can run, and `sqd` lists the tables it knows nothing about.
+
+Read both files before you share them. The plan contains the literal values from your query (emails, ids, dates), and the catalog contains your table, column and index names.
 
 ## Development
 

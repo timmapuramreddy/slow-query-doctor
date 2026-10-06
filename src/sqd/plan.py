@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -94,6 +95,43 @@ def walk(plan: dict[str, Any]) -> Iterator[PlanNode]:
         yield PlanNode(raw=node, depth=depth)
         for child in reversed(node.get("Plans", [])):
             stack.append((child, depth + 1))
+
+
+def relations(plan: dict[str, Any]) -> set[str]:
+    """Names of the tables the plan reads."""
+    return {n.relation for n in walk(plan) if n.relation}
+
+
+HOW_TO_GET_A_PLAN = (
+    'Get one with: psql -XqAt -c "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) <your query>" '
+    "> plan.json"
+)
+
+
+def parse_explain(text: str | bytes) -> dict[str, Any]:
+    """The EXPLAIN result from a shared plan file, in the shape explain_analyze() returns.
+
+    Accepts psql's one-element array or the bare object. Bytes may be UTF-8, -16 or -32
+    (json detects which), so files saved by PowerShell's `>` also read.
+    """
+    try:
+        data = json.loads(text)
+    except ValueError:
+        raise ValueError(
+            f"The plan is not JSON (text-format EXPLAIN is not supported). {HOW_TO_GET_A_PLAN}"
+        ) from None
+    if isinstance(data, list):
+        if len(data) != 1:
+            raise ValueError(f"Expected one plan, got {len(data)}. {HOW_TO_GET_A_PLAN}")
+        data = data[0]
+    if not isinstance(data, dict) or not isinstance(data.get("Plan"), dict):
+        raise ValueError(f'The file has no "Plan" object. {HOW_TO_GET_A_PLAN}')
+    if "Actual Rows" not in data["Plan"]:
+        raise ValueError(
+            "The plan has no actual row counts: it was made without ANALYZE, and the rules "
+            f"need real row counts. {HOW_TO_GET_A_PLAN}"
+        )
+    return data
 
 
 def strip_literals(expression: str) -> str:
