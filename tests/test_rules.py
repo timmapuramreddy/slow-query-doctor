@@ -85,6 +85,24 @@ def test_join_rule_uses_the_rows_a_scan_read_when_the_table_was_never_analyzed(f
     assert [f.rule_id for f in run_rules(plan, catalog)] == ["missing-index"]
 
 
+def test_a_small_table_in_a_rerun_parallel_scan_is_still_small():
+    # Shape seen on PostgreSQL 17: a Gather on the inner side of a nested loop runs 200
+    # times; its parallel Seq Scan shows 600 loops (200 runs x 3 processes) of 167 rows.
+    scan = _seq_scan("(status = 'x'::text)", kept=0, removed=167)["Plan"]
+    scan.update({"Parallel Aware": True, "Actual Loops": 600})
+    gather = {"Node Type": "Gather", "Actual Loops": 200, "Actual Rows": 0, "Plans": [scan]}
+    outer = {"Node Type": "Function Scan", "Actual Loops": 1, "Actual Rows": 200}
+    plan = {
+        "Plan": {
+            "Node Type": "Nested Loop",
+            "Actual Loops": 1,
+            "Actual Rows": 0,
+            "Plans": [outer, gather],
+        }
+    }
+    assert run_rules(plan, _catalog(rows=0)) == []
+
+
 def test_a_small_table_scanned_once_per_outer_row_is_still_small():
     # Inside a nested loop, a 500-row table is read 1,000 times: 500,000 rows in total,
     # but one pass is 500 rows.

@@ -31,6 +31,16 @@ class PlanNode:
 
     raw: dict[str, Any]
     depth: int
+    # Times the nearest Gather above re-ran its parallel plan (a nested loop can re-run it).
+    # A parallel-aware node's loops are these runs times the processes in each run.
+    rescans: int = 1
+
+    def child(self, raw: dict[str, Any]) -> PlanNode:
+        """The node for one of this node's "Plans", carrying the Gather run count down."""
+        gather = self.node_type in ("Gather", "Gather Merge")
+        return PlanNode(
+            raw=raw, depth=self.depth + 1, rescans=self.loops if gather else self.rescans
+        )
 
     @property
     def node_type(self) -> str:
@@ -88,13 +98,11 @@ class PlanNode:
 
 def walk(plan: dict[str, Any]) -> Iterator[PlanNode]:
     """Yield every node, top first. Accepts the EXPLAIN result or its "Plan" object."""
-    root = plan.get("Plan", plan)
-    stack: list[tuple[dict[str, Any], int]] = [(root, 0)]
+    stack = [PlanNode(raw=plan.get("Plan", plan), depth=0)]
     while stack:
-        node, depth = stack.pop()
-        yield PlanNode(raw=node, depth=depth)
-        for child in reversed(node.get("Plans", [])):
-            stack.append((child, depth + 1))
+        node = stack.pop()
+        yield node
+        stack.extend(node.child(raw) for raw in reversed(node.raw.get("Plans", [])))
 
 
 def relations(plan: dict[str, Any]) -> set[str]:

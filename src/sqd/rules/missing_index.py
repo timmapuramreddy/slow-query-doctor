@@ -24,11 +24,12 @@ def table_rows(scan: PlanNode, table: Table) -> int:
     """Rows in the table: the catalog estimate, or what one pass of this Seq Scan read if more.
 
     A never-analyzed table has reltuples = -1, which the catalog reports as 0, and stale
-    statistics undercount. Workers of a parallel scan share one pass, so their loops add up;
-    other loops (a scan inside a nested loop) each read the whole table again.
+    statistics undercount. The processes of one parallel run share a pass, so a parallel scan
+    read the table once per run of its Gather; any other scan once per loop (e.g. inside a
+    nested loop).
     """
     read = scan.actual_rows + scan.rows_removed_by_filter
-    one_pass = read if scan.raw.get("Parallel Aware") else read // scan.loops
+    one_pass = read // (scan.rescans if scan.raw.get("Parallel Aware") else scan.loops)
     return max(table.rows, one_pass)
 
 
@@ -113,7 +114,7 @@ _PASS_THROUGH = frozenset({"Hash", "Sort", "Materialize", "Gather", "Gather Merg
 def _scan_below(node: PlanNode) -> PlanNode | None:
     """The Seq Scan that feeds a join input, looking through Hash, Sort, Materialize, Gather."""
     while node.node_type in _PASS_THROUGH and node.raw.get("Plans"):
-        node = PlanNode(raw=node.raw["Plans"][0], depth=node.depth + 1)
+        node = node.child(node.raw["Plans"][0])
     return node if node.node_type == "Seq Scan" else None
 
 
@@ -129,7 +130,7 @@ def check_join(node: PlanNode, catalog: Catalog) -> list[Finding]:
     children = node.raw.get("Plans", [])
     if not condition or len(children) != 2:
         return []
-    sides = [PlanNode(raw=child, depth=node.depth + 1) for child in children]
+    sides = [node.child(child) for child in children]
 
     findings: list[Finding] = []
     for i, side in enumerate(sides):
