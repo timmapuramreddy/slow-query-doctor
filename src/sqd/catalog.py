@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -63,3 +64,41 @@ class Catalog:
                 for name, t in data.items()
             }
         )
+
+    @classmethod
+    def from_json(cls, text: str | bytes) -> Catalog:
+        """Build from a catalog file made by running `sqd catalog-sql`, with plain errors."""
+        how = "Make it with `sqd catalog-sql plan.json > catalog.sql` and "
+        how += "`psql -XqAt -f catalog.sql -o catalog.json`."
+        try:
+            data = json.loads(text)
+        except ValueError:
+            raise ValueError(f"The catalog file is not JSON. {how}") from None
+        try:
+            catalog = cls.from_dict(data)
+        except (AttributeError, KeyError, TypeError):
+            catalog = None
+        if catalog is None or not all(_well_typed(t) for t in catalog.tables.values()):
+            raise ValueError(f"The catalog file is not in the expected shape. {how}")
+        return catalog
+
+
+def _well_typed(table: Table) -> bool:
+    """True if a table read from a file has the types the rules expect."""
+
+    def names(items: object, nullable: bool = False) -> bool:
+        return isinstance(items, list) and all(
+            isinstance(i, str) or (nullable and i is None) for i in items
+        )
+
+    return (
+        isinstance(table.rows, int)
+        and not isinstance(table.rows, bool)
+        and names(table.columns)
+        and all(
+            isinstance(ix.name, str)
+            and isinstance(ix.definition, str)
+            and names(ix.columns, nullable=True)
+            for ix in table.indexes
+        )
+    )
