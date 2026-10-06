@@ -108,6 +108,13 @@ def test_check_plan_names_tables_missing_from_a_partial_catalog(tmp_path, capsys
         ("coalesce\n----------\n{}\n(1 row)", "not JSON"),
         ('{"students": {"rows": 5}}', "sqd catalog-sql"),
         ("[1, 2]", "sqd catalog-sql"),
+        ('{"students": {"rows": "5", "columns": [], "indexes": []}}', "sqd catalog-sql"),
+        ('{"students": {"rows": 5, "columns": [1], "indexes": []}}', "sqd catalog-sql"),
+        (
+            '{"t": {"rows": 5, "columns": [], "indexes": [{"name": "i", "columns": [2], '
+            '"definition": ""}]}}',
+            "sqd catalog-sql",
+        ),
     ],
 )
 def test_check_plan_rejects_a_bad_catalog_file(catalog_text, message, tmp_path, capsys, no_db):
@@ -130,14 +137,36 @@ def test_check_needs_exactly_one_input(args, message, capsys, no_db):
     assert message in capsys.readouterr().err
 
 
-def test_catalog_sql_lists_the_plan_tables_as_quoted_literals(tmp_path, capsys, no_db):
+def test_catalog_sql_dollar_quotes_names_with_a_tag_not_in_the_name(tmp_path, capsys, no_db):
     plan = {"Plan": {"Relation Name": "o'brien", "Actual Rows": 1, "Plans": []}}
-    plan["Plan"]["Plans"].append({"Relation Name": "Grades", "Actual Rows": 1})
+    plan["Plan"]["Plans"].append({"Relation Name": "a$n$b", "Actual Rows": 1})
     (tmp_path / "plan.json").write_text(json.dumps([plan]))
     assert cli.main(["catalog-sql", str(tmp_path / "plan.json")]) == 0
     out = capsys.readouterr().out
-    assert "ARRAY['Grades', 'o''brien']::text[]" in out
+    assert "ARRAY[$n0$a$n$b$n0$, $n0$o'brien$n0$]::text[]" in out
     assert "%s" not in out
+
+
+def test_catalog_sql_refuses_a_nul_in_a_name(tmp_path, capsys, no_db):
+    plan = {"Plan": {"Relation Name": "a\u0000b", "Actual Rows": 1}}
+    (tmp_path / "plan.json").write_text(json.dumps([plan]))
+    assert cli.main(["catalog-sql", str(tmp_path / "plan.json")]) == 2
+    assert "NUL" in capsys.readouterr().err
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not os.environ.get(db.DSN_ENV), reason="needs SQD_DATABASE_URL")
+def test_printed_catalog_sql_keeps_hostile_names_inside_the_literal():
+    # With standard_conforming_strings off, a backslash escapes a quote in '...'.
+    payload = "x\\'\n; CREATE TEMP TABLE injected (); --"
+    with psycopg.connect(db.get_dsn()) as conn:
+        conn.execute("SET LOCAL standard_conforming_strings = off")
+        conn.execute('CREATE TEMP TABLE "back\\slash" (id int)')
+        row = conn.execute(db.catalog_sql({payload, "back\\slash"})).fetchone()
+        injected = conn.execute("SELECT to_regclass('pg_temp.injected')").fetchone()[0]
+        conn.rollback()
+    assert list(row[0]) == ["back\\slash"]
+    assert injected is None
 
 
 @pytest.mark.integration

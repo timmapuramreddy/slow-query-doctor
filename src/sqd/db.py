@@ -203,9 +203,20 @@ def load_catalog(conn: psycopg.Connection, table_names: set[str]) -> Catalog:
     return Catalog.from_dict(row[0] if row else {})
 
 
+def _dollar_quote(text: str) -> str:
+    """$n0$text$n0$ with a tag not inside the text. Unlike '...', no setting such as
+    standard_conforming_strings changes how it reads, so a name cannot end it early."""
+    if "\0" in text:
+        raise ValueError("A table name in the plan contains a NUL character.")
+    n = 0
+    while f"$n{n}$" in text:
+        n += 1
+    return f"$n{n}${text}$n{n}$"
+
+
 def catalog_sql(table_names: set[str]) -> str:
     """The catalog query with the table names filled in, for people to run on their own DB."""
-    names = ", ".join("'" + name.replace("'", "''") + "'" for name in sorted(table_names))
+    names = ", ".join(_dollar_quote(name) for name in sorted(table_names))
     return (
         "-- Slow Query Doctor catalog query. Read-only: it reads row estimates, column names\n"
         "-- and index definitions from pg_catalog for the tables in your plan.\n"
