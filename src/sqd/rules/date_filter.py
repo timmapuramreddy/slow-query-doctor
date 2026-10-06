@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import re
+
 from sqd.catalog import Catalog
-from sqd.plan import PlanNode, date_wrapped_columns
+from sqd.plan import PlanNode, date_wrapped_columns, quote_name
 from sqd.rules.base import Finding
 from sqd.rules.missing_index import is_selective_seq_scan
 
 RULE_ID = "non-sargable-date-filter"
+
+_ZONE = re.compile(r"AT TIME ZONE '((?:[^']|'')*)'")
 
 
 def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
@@ -38,6 +42,13 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
         if col in seen:
             continue
         seen.add(col)
+        # With AT TIME ZONE the day starts at midnight in that zone, so the range must say so.
+        zone = next(
+            (m.group(1) for c, _, expr in wrapped if c == col for m in [_ZONE.search(expr)] if m),
+            None,
+        )
+        at = f" 00:00 {zone}" if zone else ""
+        name = quote_name(col)
         indexed = table.has_leading_index(col)
         index_note = (
             f"There is an index on {col}, but it stores {col} values, not {wrapper} results, "
@@ -45,7 +56,9 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
             if indexed
             else "PostgreSQL"
         )
-        add_index = "" if indexed else f" Then add CREATE INDEX ON {table.name} ({col});"
+        add_index = (
+            "" if indexed else f" Then add CREATE INDEX ON {quote_name(table.name)} ({name});"
+        )
         findings.append(
             Finding(
                 rule_id=RULE_ID,
@@ -56,7 +69,8 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
                 ),
                 suggestion=(
                     f"Compare the bare column with a half-open range, for example "
-                    f"{col} >= '2024-03-15' AND {col} < '2024-03-16' for one day.{add_index}"
+                    f"{name} >= '2024-03-15{at}' AND {name} < '2024-03-16{at}' for one day."
+                    f"{add_index}"
                 ),
                 node=node.summary(),
                 time_ms=node.total_time_ms,

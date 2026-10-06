@@ -111,6 +111,35 @@ def unquote(name: str) -> str:
     return name[1:-1].replace('""', '"') if name.startswith('"') else name
 
 
+# Keywords PostgreSQL 17 quotes in names: pg_get_keywords() where catcode <> 'U'.
+_KEYWORDS_TEXT = """
+    all analyse analyze and any array as asc asymmetric authorization between bigint binary bit
+    boolean both case cast char character check coalesce collate collation column concurrently
+    constraint create cross current_catalog current_date current_role current_schema
+    current_time current_timestamp current_user dec decimal default deferrable desc distinct do
+    else end except exists extract false fetch float for foreign freeze from full grant greatest
+    group grouping having ilike in initially inner inout int integer intersect interval into is
+    isnull join json json_array json_arrayagg json_exists json_object json_objectagg json_query
+    json_scalar json_serialize json_table json_value lateral leading least left like limit
+    localtime localtimestamp merge_action national natural nchar none normalize not notnull null
+    nullif numeric offset on only or order out outer overlaps overlay placing position precision
+    primary real references returning right row select session_user setof similar smallint some
+    substring symmetric system_user table tablesample then time timestamp to trailing treat trim
+    true union unique user using values varchar variadic verbose when where window with
+    xmlattributes xmlconcat xmlelement xmlexists xmlforest xmlnamespaces xmlparse xmlpi xmlroot
+    xmlserialize xmltable
+"""
+_QUOTED_KEYWORDS = frozenset(_KEYWORDS_TEXT.split())
+_PLAIN_NAME = re.compile(r"[a-z_][a-z0-9_$]*")
+
+
+def quote_name(name: str) -> str:
+    """Name as it must be written in SQL, like PostgreSQL's quote_ident: 'UserId' -> '"UserId"'."""
+    if _PLAIN_NAME.fullmatch(name) and name not in _QUOTED_KEYWORDS:
+        return name
+    return '"' + name.replace('"', '""') + '"'
+
+
 def localize(expression: str, names: set[str]) -> str:
     """One table's view of an expression: drop its own alias, hide other tables' columns.
 
@@ -171,7 +200,7 @@ def function_calls(expression: str) -> list[tuple[str, str]]:
 
 # Column (optionally cast) followed by LIKE (~~) or ILIKE (~~*) and a pattern starting with % or _.
 _LEADING_WILDCARD = re.compile(
-    r"\b([a-z_][a-z0-9_]*)\)?(?:::[a-z ]+?)?\s+~~\*?\s+'([%_](?:[^']|'')*)'"
+    rf"(?<![\w$\"])({_NAME})\)?(?:::[a-z ]+?)?\s+~~\*?\s+'([%_](?:[^']|'')*)'"
 )
 
 
@@ -182,9 +211,9 @@ def leading_wildcard_columns(expression: str, columns: list[str]) -> list[tuple[
     """
     known = set(columns)
     return [
-        (m.group(1), m.group(2))
+        (unquote(m.group(1)), m.group(2))
         for m in _LEADING_WILDCARD.finditer(expression)
-        if m.group(1) in known
+        if unquote(m.group(1)) in known
     ]
 
 
@@ -192,9 +221,12 @@ def leading_wildcard_columns(expression: str, columns: list[str]) -> list[tuple[
 DATE_FUNCTIONS = frozenset({"date_trunc", "date_part", "date"})
 
 _EXTRACT = re.compile(r"\bextract\(\s*\w+\s+from\s+([^)]*)\)", re.I)
-_DATE_CAST = re.compile(
-    r"\(?(?:[a-z_][a-z0-9_]*\.)?([a-z_][a-z0-9_]*)\)?"
-    r"::(date|timestamp(?: with(?:out)? time zone)?)\b"
+_DATE_TYPE = r"::(date|timestamp(?: with(?:out)? time zone)?)\b"
+_DATE_CASTS = (
+    # (graded_at)::date
+    re.compile(rf"\(?(?:{_NAME}\.)?({_NAME})\)?{_DATE_TYPE}"),
+    # ((graded_at AT TIME ZONE 'UTC'::text))::date
+    re.compile(rf"\(\((?:{_NAME}\.)?({_NAME}) AT TIME ZONE '[^']*'(?:::[a-z ]+?)?\)\){_DATE_TYPE}"),
 )
 
 
@@ -217,10 +249,14 @@ def date_wrapped_columns(expression: str, columns: list[str]) -> list[tuple[str,
             (col, "EXTRACT()", expression[match.start() : match.end()])
             for col in referenced_columns(match.group(1), columns)
         ]
-    for match in _DATE_CAST.finditer(text):
-        if match.group(1) in columns:
+    for match in (m for pattern in _DATE_CASTS for m in pattern.finditer(text)):
+        if unquote(match.group(1)) in columns:
             found.append(
-                (match.group(1), f"::{match.group(2)}", expression[match.start() : match.end()])
+                (
+                    unquote(match.group(1)),
+                    f"::{match.group(2)}",
+                    expression[match.start() : match.end()],
+                )
             )
     unique: list[tuple[str, str, str]] = []
     for item in found:

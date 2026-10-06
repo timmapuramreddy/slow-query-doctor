@@ -9,6 +9,7 @@ from sqd.plan import (
     function_calls,
     leading_wildcard_columns,
     localize,
+    quote_name,
     referenced_columns,
 )
 from sqd.rules.base import LARGE_TABLE_ROWS, Finding
@@ -78,7 +79,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
                 f"and kept {node.actual_rows:,} ({kept}). There is no index on {column}, "
                 "so it has no shortcut to the matching rows."
             ),
-            suggestion=f"CREATE INDEX ON {table.name} ({column});",
+            suggestion=f"CREATE INDEX ON {quote_name(table.name)} ({quote_name(column)});",
             node=node.summary(),
             time_ms=node.total_time_ms,
         )
@@ -142,7 +143,7 @@ def check_join(node: PlanNode, catalog: Catalog) -> list[Finding]:
                     f"and the join kept {node.actual_rows:,}. There is no index on {column}, "
                     "so it cannot look up only the matching rows."
                 ),
-                suggestion=f"CREATE INDEX ON {table.name} ({column});",
+                suggestion=f"CREATE INDEX ON {quote_name(table.name)} ({quote_name(column)});",
                 node=f"{node.node_type} on {condition} over {scan.summary()}",
                 time_ms=scan.total_time_ms,
             )

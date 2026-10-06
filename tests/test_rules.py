@@ -573,3 +573,80 @@ def test_filter_after_index_treats_equals_any_on_array_cast_as_equality():
     )
     findings = run_rules(plan, _grades_catalog())
     assert findings[0].suggestion.endswith("CREATE INDEX ON grades (assessment, graded_at, score);")
+
+
+def test_date_filter_fires_on_cast_after_at_time_zone(fixture_loader):
+    plan, catalog = fixture_loader("date_filter_at_time_zone")
+    findings = run_rules(plan, catalog)
+    assert [f.title for f in findings] == [
+        "::date on grades.graded_at turns a date range into a full scan"
+    ]
+    # The range keeps the zone, or the day would start at the session's midnight instead.
+    assert (
+        "graded_at >= '2024-03-15 00:00 UTC' AND graded_at < '2024-03-16 00:00 UTC'"
+        in findings[0].suggestion
+    )
+
+
+def test_date_filter_silent_when_at_time_zone_expression_is_indexed():
+    catalog = _expression_index_catalog(
+        "CREATE INDEX x ON public.students USING btree "
+        "((((graded_at AT TIME ZONE 'UTC'::text))::date))"
+    )
+    plan = _seq_scan("(((graded_at AT TIME ZONE 'UTC'::text))::date = '2024-03-15'::date)")
+    assert run_rules(plan, catalog) == []
+
+
+# Names that need quotes in SQL: mixed case or a keyword
+
+
+def _orders_scan(filter_: str) -> dict:
+    return {
+        "Plan": {
+            "Node Type": "Seq Scan",
+            "Relation Name": "Orders",
+            "Alias": "Orders",
+            "Filter": filter_,
+            "Actual Rows": 3,
+            "Rows Removed by Filter": 999_997,
+            "Actual Loops": 1,
+            "Actual Total Time": 40.0,
+        }
+    }
+
+
+def _orders_catalog() -> Catalog:
+    return Catalog.from_dict(
+        {
+            "Orders": {
+                "rows": 1_000_000,
+                "columns": ["id", "UserId", "order", "Email", "PlacedAt"],
+                "indexes": [{"name": "o_pkey", "columns": ["id"], "definition": "(id)"}],
+            }
+        }
+    )
+
+
+def test_missing_index_quotes_mixed_case_names():
+    findings = run_rules(_orders_scan('("UserId" = 42)'), _orders_catalog())
+    assert [f.suggestion for f in findings] == ['CREATE INDEX ON "Orders" ("UserId");']
+
+
+def test_missing_index_quotes_keyword_column():
+    findings = run_rules(_orders_scan('("order" = 7)'), _orders_catalog())
+    assert [f.suggestion for f in findings] == ['CREATE INDEX ON "Orders" ("order");']
+
+
+def test_leading_wildcard_reads_and_quotes_mixed_case_column():
+    findings = run_rules(_orders_scan("((\"Email\")::text ~~ '%@x.edu'::text)"), _orders_catalog())
+    assert [f.rule_id for f in findings] == ["leading-wildcard"]
+    assert 'CREATE INDEX ON "Orders" USING gin ("Email" gin_trgm_ops);' in findings[0].suggestion
+
+
+def test_date_filter_reads_and_quotes_mixed_case_column():
+    findings = run_rules(
+        _orders_scan("((\"PlacedAt\")::date = '2024-03-15'::date)"), _orders_catalog()
+    )
+    assert [f.rule_id for f in findings] == ["non-sargable-date-filter"]
+    assert "\"PlacedAt\" >= '2024-03-15'" in findings[0].suggestion
+    assert findings[0].suggestion.endswith('CREATE INDEX ON "Orders" ("PlacedAt");')

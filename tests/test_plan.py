@@ -4,6 +4,7 @@ from sqd.plan import (
     function_calls,
     leading_wildcard_columns,
     localize,
+    quote_name,
     referenced_columns,
     walk,
 )
@@ -119,4 +120,21 @@ def test_referenced_columns_matches_quoted_mixed_case_columns():
     assert referenced_columns('(("UserId" = 5) AND (id > 1))', ["UserId", "id"]) == [
         "UserId",
         "id",
+    ]
+
+
+def test_date_wrapped_columns_reads_at_time_zone_cast():
+    expr = "(((graded_at AT TIME ZONE 'UTC'::text))::date = '2024-03-15'::date)"
+    assert date_wrapped_columns(expr, ["graded_at"]) == [
+        ("graded_at", "::date", "((graded_at AT TIME ZONE 'UTC'::text))::date")
+    ]
+
+
+def test_quote_name_matches_postgres_quote_ident():
+    assert [quote_name(n) for n in ["name", "order", "UserId", "time", 'a"b']] == [
+        "name",
+        '"order"',
+        '"UserId"',
+        '"time"',
+        '"a""b"',
     ]
