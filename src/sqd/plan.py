@@ -131,7 +131,52 @@ def parse_explain(text: str | bytes) -> dict[str, Any]:
             "The plan has no actual row counts: it was made without ANALYZE, and the rules "
             f"need real row counts. {HOW_TO_GET_A_PLAN}"
         )
+    problem = _type_problem(data, "the plan") or next(
+        filter(None, (_node_problem(n) for n in _raw_nodes(data["Plan"]))), None
+    )
+    if problem:
+        raise ValueError(f"The plan is not valid EXPLAIN output: {problem}. {HOW_TO_GET_A_PLAN}")
     return data
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _type_problem(node: dict[str, Any], where: str) -> str | None:
+    """What is wrong with the types of the fields sqd reads, or None.
+
+    Text: names, filters and join conditions. Numbers: actual counts and times.
+    """
+    for key, value in node.items():
+        number = key.startswith(("Actual ", "Rows Removed by ")) or key == "Execution Time"
+        text = key in ("Node Type", "Relation Name", "Alias", "Index Name") or key.endswith(
+            (" Cond", "Filter")
+        )
+        if number and not _is_number(value):
+            return f'"{key}" should be a number in {where}'
+        if text and not number and not isinstance(value, str):
+            return f'"{key}" should be text in {where}'
+    return None
+
+
+def _node_problem(node: object) -> str | None:
+    if not isinstance(node, dict):
+        return f"{json.dumps(node)} is not a plan node"
+    where = f"a {node['Node Type']} node" if isinstance(node.get("Node Type"), str) else "a node"
+    if not isinstance(node.get("Plans", []), list):
+        return f'"Plans" should be a list in {where}'
+    return _type_problem(node, where)
+
+
+def _raw_nodes(root: object) -> Iterator[object]:
+    """Every node of an unchecked plan tree; stops below anything that is not a node."""
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        yield node
+        if isinstance(node, dict) and isinstance(node.get("Plans"), list):
+            stack.extend(node["Plans"])
 
 
 def strip_literals(expression: str) -> str:

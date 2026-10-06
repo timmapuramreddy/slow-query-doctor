@@ -63,6 +63,12 @@ def test_parse_explain_accepts_analyze_with_timing_off():
         ('[{"Plan": {"Actual Rows": 1}}, {"Plan": {"Actual Rows": 1}}]', "one plan"),
         ('{"rows": 3}', 'no "Plan"'),
         ('[{"Plan": {"Node Type": "Seq Scan", "Plan Rows": 3}}]', "without ANALYZE"),
+        ('{"Plan": {"Actual Rows": 1, "Plans": [null]}}', "not a plan node"),
+        ('{"Plan": {"Actual Rows": 1, "Plans": null}}', '"Plans" should be a list'),
+        ('{"Plan": {"Actual Rows": 1, "Relation Name": 5}}', '"Relation Name" should be text'),
+        ('{"Plan": {"Actual Rows": 1, "Hash Cond": ["x"]}}', '"Hash Cond" should be text'),
+        ('{"Plan": {"Actual Rows": true}}', '"Actual Rows" should be a number'),
+        ('{"Plan": {"Actual Rows": 1}, "Execution Time": "fast"}', '"Execution Time" should'),
     ],
 )
 def test_parse_explain_rejects_what_the_rules_cannot_read(text, message):
@@ -130,6 +136,8 @@ def test_check_plan_rejects_a_bad_catalog_file(catalog_text, message, tmp_path, 
         (["check"], "Give a SQL file or --plan"),
         (["check", "q.sql", "--plan", "p.json"], "not both"),
         (["check", "q.sql", "--catalog", "c.json"], "--catalog only works with --plan"),
+        (["check", "q.sql", "--plan", ""], "not both"),
+        (["check", "q.sql", "--catalog", ""], "--catalog only works with --plan"),
     ],
 )
 def test_check_needs_exactly_one_input(args, message, capsys, no_db):

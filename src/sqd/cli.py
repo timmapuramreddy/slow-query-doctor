@@ -34,13 +34,15 @@ def format_findings(findings: list[Finding], execution_ms: float) -> str:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    if args.plan:
-        if args.file:
+    if args.plan is not None:
+        if args.file is not None:
             raise ValueError("Give a SQL file or --plan, not both.")
         # A shared plan: read files only, never connect to a database.
         result = parse_explain(Path(args.plan).read_bytes())
         catalog = (
-            Catalog.from_json(Path(args.catalog).read_bytes()) if args.catalog else Catalog({})
+            Catalog.from_json(Path(args.catalog).read_bytes())
+            if args.catalog is not None
+            else Catalog({})
         )
         hint = (
             f"Run `sqd catalog-sql {args.plan} > catalog.sql`, run catalog.sql on the database "
@@ -48,9 +50,9 @@ def cmd_check(args: argparse.Namespace) -> int:
             "--catalog catalog.json."
         )
     else:
-        if not args.file:
+        if args.file is None:
             raise ValueError("Give a SQL file or --plan FILE.")
-        if args.catalog:
+        if args.catalog is not None:
             raise ValueError("--catalog only works with --plan.")
         sql = Path(args.file).read_text()
         with psycopg.connect(db.get_dsn(args.dsn)) as conn:
