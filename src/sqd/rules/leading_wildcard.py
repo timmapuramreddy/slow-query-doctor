@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqd.catalog import Catalog, Table
 from sqd.plan import PlanNode, leading_wildcard_columns, quote_name
 from sqd.rules.base import Finding
-from sqd.rules.missing_index import is_selective_seq_scan
+from sqd.rules.missing_index import is_selective_seq_scan, table_rows
 
 RULE_ID = "leading-wildcard"
 
@@ -49,6 +49,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
     table = catalog.get(node.relation)
     filter_ = node.own_filter
     assert table is not None and filter_ is not None
+    rows = table_rows(node, table)
 
     findings: list[Finding] = []
     for col, pattern in leading_wildcard_columns(filter_, table.columns):
@@ -67,7 +68,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
                     f"The pattern starts with a wildcard, so a match can begin anywhere in "
                     f"{col}. {index_note}a B-tree index is sorted from the first character, "
                     f"and the first character is unknown. PostgreSQL read every row of "
-                    f"{table.name} (about {table.rows:,}) and tested each one."
+                    f"{table.name} (about {rows:,}) and tested each one."
                 ),
                 suggestion=(
                     f"If you know how the value starts, drop the leading wildcard. For "

@@ -7,7 +7,7 @@ import re
 from sqd.catalog import Catalog
 from sqd.plan import DATE_FUNCTIONS, PlanNode, function_calls, quote_name, referenced_columns
 from sqd.rules.base import Finding
-from sqd.rules.missing_index import is_selective_seq_scan
+from sqd.rules.missing_index import is_selective_seq_scan, table_rows
 
 RULE_ID = "function-on-indexed-column"
 
@@ -29,6 +29,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
     table = catalog.get(node.relation)
     filter_ = node.own_filter
     assert table is not None and filter_ is not None
+    rows = table_rows(node, table)
 
     findings: list[Finding] = []
     for func, args in function_calls(filter_):
@@ -46,7 +47,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
                     explanation=(
                         f"There is an index on {col}, but the filter compares {expr}, not {col}. "
                         f"The index stores {col} values, not {expr} values, so PostgreSQL read "
-                        f"every row of {table.name} (about {table.rows:,}) instead."
+                        f"every row of {table.name} (about {rows:,}) instead."
                     ),
                     suggestion=(
                         f"Compare the bare column if you can (store the value already in the "

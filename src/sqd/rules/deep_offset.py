@@ -21,7 +21,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
     children = node.raw.get("Plans", [])
     if node.node_type != "Limit" or not children:
         return []
-    child = PlanNode(raw=children[0], depth=node.depth + 1)
+    child = node.child(children[0])
     skipped = child.actual_rows - node.actual_rows
     if skipped < DEEP_OFFSET_ROWS:
         return []
