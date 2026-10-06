@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -140,7 +141,8 @@ def parse_explain(text: str | bytes) -> dict[str, Any]:
 
 
 def _is_number(value: object) -> bool:
-    return isinstance(value, int | float) and not isinstance(value, bool)
+    """True for a finite int or float; json reads 1e400 as inf and NaN as nan."""
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _type_problem(node: dict[str, Any], where: str) -> str | None:

@@ -15,9 +15,12 @@ from sqd.plan import parse_explain, relations
 from sqd.rules import Finding, run_rules
 
 
-def format_findings(findings: list[Finding], execution_ms: float) -> str:
-    """Plain-text report for the terminal."""
-    lines = [f"Query ran in {execution_ms:.1f} ms."]
+def format_findings(findings: list[Finding], execution_ms: float | None) -> str:
+    """Plain-text report for the terminal. execution_ms is None if the plan has no time."""
+    if execution_ms is None:
+        lines = ["Query time is not in the plan (EXPLAIN ran with SUMMARY OFF)."]
+    else:
+        lines = [f"Query ran in {execution_ms:.1f} ms."]
     if not findings:
         lines.append("No known slow patterns found.")
         return "\n".join(lines)
@@ -66,16 +69,22 @@ def cmd_check(args: argparse.Namespace) -> int:
             f"and indexes skipped them. {hint}",
             file=sys.stderr,
         )
-    print(format_findings(run_rules(result, catalog), float(result.get("Execution Time", 0.0))))
+    execution_ms = result.get("Execution Time")
+    print(format_findings(run_rules(result, catalog), execution_ms))
     return 0
 
 
 def cmd_catalog_sql(args: argparse.Namespace) -> int:
-    tables = relations(parse_explain(Path(args.plan).read_bytes()))
-    if not tables:
-        raise ValueError("The plan reads no tables, so there is nothing to look up.")
-    print(db.catalog_sql(tables))
+    # A plan that reads no tables still gets a query; it returns {} so the steps stay the same.
+    print(db.catalog_sql(relations(parse_explain(Path(args.plan).read_bytes()))))
     return 0
+
+
+def demo_scale(text: str) -> int:
+    value = int(text)
+    if not 1 <= value <= db.MAX_DEMO_SCALE:
+        raise argparse.ArgumentTypeError(f"must be 1 to {db.MAX_DEMO_SCALE}")
+    return value
 
 
 def positive_int(text: str) -> int:
@@ -175,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     load = demo_sub.add_parser("load", help="create and fill the synthetic school database")
     load.add_argument(
         "--scale",
-        type=positive_int,
+        type=demo_scale,
         default=1,
         help="multiply the row counts (courses stay at 500); 1 is what the tests expect",
     )
