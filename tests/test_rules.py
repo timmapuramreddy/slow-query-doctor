@@ -870,3 +870,50 @@ def test_top_n_sort_silent_when_the_index_exists():
 def test_top_n_sort_leaves_a_selective_filter_to_the_missing_index_rule():
     plan = _top_n("(status = 'x'::text)", ["first_name"], kept=30_000)
     assert [f.rule_id for f in run_rules(plan, _catalog())] == ["missing-index"]
+
+
+def _index(definition_columns: str, columns: list[str]) -> dict:
+    definition = f"CREATE INDEX ix ON public.students USING btree ({definition_columns})"
+    return {"name": "ix", "columns": columns, "definition": definition}
+
+
+def test_top_n_sort_silent_when_the_index_can_be_read_backwards():
+    catalog = _catalog(indexes=[_index("status, first_name", ["status", "first_name"])])
+    plan = _top_n("(status = 'x'::text)", ["first_name DESC"])
+    assert _suggested_index(plan, catalog) == []
+
+
+def test_top_n_sort_fires_when_the_index_has_another_nulls_order():
+    # Read backwards, (first_name) gives DESC NULLS FIRST, not ASC NULLS FIRST.
+    catalog = _catalog(indexes=[_index("first_name", ["first_name"])])
+    plan = _top_n(None, ["first_name NULLS FIRST"], kept=1_000_000)
+    assert _suggested_index(plan, catalog) == ["CREATE INDEX ON students (first_name NULLS FIRST);"]
+
+
+def test_top_n_sort_fires_when_the_index_has_another_direction():
+    catalog = _catalog(indexes=[_index("status, first_name DESC", ["status", "first_name"])])
+    plan = _top_n("(status = 'x'::text)", ["first_name", "id"])
+    assert _suggested_index(plan, catalog) == ["CREATE INDEX ON students (status, first_name, id);"]
+    plan = _top_n("(status = 'x'::text)", ["first_name"])
+    catalog = _catalog(
+        indexes=[_index("status, first_name DESC NULLS LAST", ["status", "first_name"])]
+    )
+    assert _suggested_index(plan, catalog) == ["CREATE INDEX ON students (status, first_name);"]
+
+
+def test_top_n_sort_reads_an_equality_on_a_cast_with_a_length():
+    plan = _top_n("((status)::character varying(20) = 'x'::text)", ["first_name"])
+    assert _suggested_index(plan) == ["CREATE INDEX ON students (status, first_name);"]
+
+
+def test_top_n_sort_does_not_read_a_cast_type_as_an_equality_column():
+    # "::status =" casts email; the status column itself is only compared with >.
+    plan = _top_n("(((email)::status = 'x'::status) AND (status > 'a'::text))", ["first_name"])
+    assert _suggested_index(plan) == ["CREATE INDEX ON students (email, first_name);"]
+
+
+def test_top_n_sort_looks_past_an_initplan_of_the_limit():
+    plan = _top_n(None, ["first_name"], kept=1_000_000)
+    initplan = {"Node Type": "Result", "Parent Relationship": "InitPlan", "Actual Rows": 1}
+    plan["Plan"]["Plans"].insert(0, initplan)
+    assert _suggested_index(plan) == ["CREATE INDEX ON students (first_name);"]

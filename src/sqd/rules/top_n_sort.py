@@ -27,24 +27,28 @@ RULE_ID = "top-n-sort"
 _SCANS = frozenset({"Seq Scan", "Index Scan", "Index Only Scan", "Bitmap Heap Scan"})
 
 
-def _below(node: PlanNode, node_type: str) -> PlanNode | None:
-    """The only child of this node, looking through a Gather Merge, if it has node_type."""
-    children = node.raw.get("Plans", [])
-    if len(children) != 1:
-        return None
-    child = node.child(children[0])
-    if child.node_type == "Gather Merge":
-        return _below(child, node_type)
-    return child if child.node_type == node_type else None
+def _input(node: PlanNode) -> PlanNode | None:
+    """The one child that feeds this node rows; InitPlans and SubPlans are not inputs."""
+    children = [
+        raw
+        for raw in node.raw.get("Plans", [])
+        if raw.get("Parent Relationship") not in ("InitPlan", "SubPlan")
+    ]
+    return node.child(children[0]) if len(children) == 1 else None
+
+
+def _sort_below(limit: PlanNode) -> PlanNode | None:
+    """The Sort that feeds the Limit, looking through a Gather Merge."""
+    child = _input(limit)
+    while child is not None and child.node_type == "Gather Merge":
+        child = _input(child)
+    return child if child is not None and child.node_type == "Sort" else None
 
 
 def _scan_below(sort: PlanNode) -> PlanNode | None:
     """The scan of one table that feeds the sort, if that is all it sorts."""
-    children = sort.raw.get("Plans", [])
-    if len(children) != 1:
-        return None
-    scan = sort.child(children[0])
-    return scan if scan.node_type in _SCANS and scan.relation else None
+    scan = _input(sort)
+    return scan if scan is not None and scan.node_type in _SCANS and scan.relation else None
 
 
 def _equality_columns(scan: PlanNode, table: Table) -> list[str]:
@@ -75,17 +79,68 @@ def _equality_columns(scan: PlanNode, table: Table) -> list[str]:
 def _equals_one_value(condition: str, column: str) -> bool:
     """True for "column = value", not "column = ANY (...)": a list of values loses the order."""
     name = re.escape(quote_name(column))
-    pattern = rf"(?<![\w$.\"]){name}\)?(?:::[a-z ]+?(?:\[\])*)?\s+=\s+(?!ANY\b)"
+    # Not after "::" or ".", where the name is a type or another table's column.
+    pattern = rf"(?<![\w$.:\"]){name}\)?(?:::[a-z ]+?(?:\([0-9, ]*\))?(?:\[\])*)?\s+=\s+(?!ANY\b)"
     return bool(re.search(pattern, mask_literals(condition)))
 
 
-def _has_index(table: Table, first: list[str], then: list[str]) -> bool:
-    """True if an index starts with the columns of first (any order), then those of then."""
-    width = len(first) + len(then)
-    return any(
-        set(ix.columns[: len(first)]) == set(first) and ix.columns[len(first) : width] == then
-        for ix in table.indexes
-    )
+Order = tuple[bool, bool]  # (descending, nulls first)
+
+
+def _order(text: str) -> Order:
+    """Order of a sort key or index column from its ASC / DESC / NULLS words.
+
+    Without NULLS, PostgreSQL puts nulls last going up and first going down.
+    """
+    words = text.upper()
+    descending = bool(re.search(r"\bDESC\b", words))
+    if "NULLS FIRST" in words:
+        return descending, True
+    return descending, descending and "NULLS LAST" not in words
+
+
+def _index_orders(definition: str) -> list[Order]:
+    """The order of each column in an index definition, as pg_get_indexdef prints it.
+
+    Example: "CREATE INDEX ix ON t USING btree (a, b DESC)" -> [(False, False), (True, True)].
+    """
+    text = mask_literals(definition)
+    using = re.search(r"\bUSING \w+ \(", text)
+    pos = using.end() if using else text.find("(") + 1
+    orders: list[Order] = []
+    depth, start = 0, pos
+    while 0 < pos <= len(text) - 1 and depth >= 0:
+        char = text[pos]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if depth < 0 or (char == "," and depth == 0):
+            orders.append(_order(text[start:pos]))
+            start = pos + 1
+        pos += 1
+    return orders
+
+
+def _has_index(table: Table, first: list[str], keys: list[tuple[str, str]]) -> bool:
+    """True if an index starts with the columns of first (any order), then the sort keys.
+
+    The sort keys must match in name and order, or all be reversed: an index can be read
+    backwards.
+    """
+    wanted = [_order(order) for _, order in keys]
+    reversed_ = [(not desc, not nulls_first) for desc, nulls_first in wanted]
+    width = len(first) + len(keys)
+    for ix in table.indexes:
+        orders = _index_orders(ix.definition)
+        orders += [(False, False)] * (len(ix.columns) - len(orders))
+        if (
+            set(ix.columns[: len(first)]) == set(first)
+            and ix.columns[len(first) : width] == [col for col, _ in keys]
+            and orders[len(first) : width] in (wanted, reversed_)
+        ):
+            return True
+    return False
 
 
 def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
@@ -96,9 +151,10 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
     """
     if node.node_type != "Limit":
         return []
-    sort = _below(node, "Sort")
+    sort = _sort_below(node)
     scan = _scan_below(sort) if sort else None
-    if sort is None or scan is None:
+    child = _input(node)
+    if sort is None or scan is None or child is None:
         return []
     table = catalog.get(scan.relation)
     sorted_rows = scan.actual_rows
@@ -109,7 +165,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
         or node.actual_rows > MAX_KEPT_SHARE * sorted_rows
         # A selective filter is rule 1's; a deep OFFSET is rule 4's.
         or is_selective_seq_scan(scan, catalog)
-        or node.child(node.raw["Plans"][0]).actual_rows - node.actual_rows >= DEEP_OFFSET_ROWS
+        or child.actual_rows - node.actual_rows >= DEEP_OFFSET_ROWS
     ):
         return []
 
@@ -119,7 +175,7 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
         return []
     sort_columns = [col for col, _ in keys]
     first = [col for col in _equality_columns(scan, table) if col not in sort_columns]
-    if _has_index(table, first, sort_columns):
+    if _has_index(table, first, keys):
         return []
 
     # A btree index can be read backwards, so one shared default order needs no ASC / DESC.
