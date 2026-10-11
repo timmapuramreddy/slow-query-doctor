@@ -106,6 +106,8 @@ class _Frame:
     node: dict[str, Any]
     subplan: tuple[str, str] | None = None  # (Parent Relationship, Subplan Name)
     repeated: set[str] = field(default_factory=set)
+    line: int = 0  # line number of a SubPlan header
+    has_child: bool = False  # a SubPlan header has its one node
 
 
 def parse_text_explain(text: str) -> dict[str, Any]:
@@ -120,6 +122,7 @@ def parse_text_explain(text: str) -> dict[str, Any]:
     # Lines indented deeper than this column belong to a block sqd does not read.
     skip_under: tuple[int, str] | None = None  # (column, the block's first line)
     last_sort_key: tuple[int, _Frame] | None = None  # the line just before was a Sort Key
+    open_header: _Frame | None = None  # a SubPlan/InitPlan/CTE header still waiting for its node
     for no, line in lines:
         indent = len(line) - len(line.lstrip(" "))
         body = line[indent:]
@@ -130,11 +133,7 @@ def parse_text_explain(text: str) -> dict[str, Any]:
             )
         if skip_under is not None:
             if indent > skip_under[0]:
-                if body.startswith("->") or _SUBPLAN.fullmatch(body):
-                    raise ValueError(
-                        f'line {no} is a plan node indented under "{skip_under[1]}", '
-                        "which is not a plan node"
-                    )
+                _check_skipped(body, no, skip_under[1])
                 continue
             skip_under = None
         if not frames:
@@ -145,6 +144,9 @@ def parse_text_explain(text: str) -> dict[str, Any]:
             result["Plan"] = _node(body, no)
             frames.append(_Frame(col=2, node=result["Plan"]))
             continue
+        if open_header and not (body.startswith("->") and indent == open_header.col):
+            _missing_header_child(open_header)
+        open_header = None
         if indent == 0:
             _summary_line(body, no, result)
             skip_under = (0, body)  # e.g. Buffers under "Planning:" or "Serialization: ..."
@@ -153,6 +155,12 @@ def parse_text_explain(text: str) -> dict[str, Any]:
         if body.startswith("->"):
             label = body.removeprefix("->").lstrip(" ")
             frame = _frame_at(frames, indent, no)
+            if frame.subplan and frame.has_child:
+                raise ValueError(
+                    f'line {no} is a second plan node under "{frame.subplan[1]}" '
+                    f"(line {frame.line}), which has one"
+                )
+            frame.has_child = True
             child = _node(label, no)
             _attach(frame, child)
             frames.append(_Frame(col=indent + 6, node=child))
@@ -161,7 +169,12 @@ def parse_text_explain(text: str) -> dict[str, Any]:
         if header:
             frame = _frame_at(frames, indent, no)
             relationship = "SubPlan" if header["kind"] == "SubPlan" else "InitPlan"
-            frames.append(_Frame(col=indent + 2, node=frame.node, subplan=(relationship, body)))
+            # PostgreSQL prints exactly one node line right under a header. CTE names are
+            # printed unquoted, so a name with a newline could otherwise invent lines.
+            open_header = _Frame(
+                col=indent + 2, node=frame.node, subplan=(relationship, body), line=no
+            )
+            frames.append(open_header)
             continue
         prop = _PROPERTY.fullmatch(body)
         if prop and prop["key"] == "Group Key" and sort_key and indent > sort_key[0]:
@@ -183,8 +196,31 @@ def parse_text_explain(text: str) -> dict[str, Any]:
                 _set_property(frame, prop["key"], prop["value"], no)
             continue
         raise ValueError(f"line {no} is not a plan node, property or summary line")
+    if open_header:
+        _missing_header_child(open_header)
     _finish(result["Plan"])
     return result
+
+
+def _check_skipped(body: str, no: int, block: str) -> None:
+    """Reject a skipped line that real EXPLAIN output never puts inside a block."""
+    prop = _PROPERTY.fullmatch(body)
+    if body.startswith("->") or _SUBPLAN.fullmatch(body):
+        raise ValueError(
+            f'line {no} is a plan node indented under "{block}", which is not a plan node'
+        )
+    if prop and prop["key"] in _READ_PROPERTIES:
+        raise ValueError(
+            f'line {no}: "{prop["key"]}" is indented under "{block}", which is not a plan node'
+        )
+
+
+def _missing_header_child(header: _Frame) -> None:
+    assert header.subplan is not None
+    raise ValueError(
+        f'line {header.line}: "{header.subplan[1]}" is not followed by its plan node '
+        "on the next line"
+    )
 
 
 def _ends_inside_quotes(line: str) -> bool:

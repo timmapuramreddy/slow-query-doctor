@@ -471,3 +471,57 @@ def test_modify_table_children_get_no_parent_relationship():
 def test_text_plan_without_analyze_gets_the_without_analyze_message():
     with pytest.raises(ValueError, match="without ANALYZE"):
         parse_explain("Seq Scan on t  (cost=0.00..1.00 rows=1 width=4)\n  Filter: (a = 1)")
+
+
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        (
+            # A CTE named "x\n  Filter: (a = 1)\n  CTE y" would print these lines.
+            "Result (actual rows=1 loops=1)\n"
+            "  CTE x\n"
+            "  Filter: (a = 1)\n"
+            "  CTE y\n"
+            "    ->  Seq Scan on t (actual rows=1 loops=1)\n",
+            'line 2: "CTE x" is not followed by its plan node',
+        ),
+        (
+            "Result (actual rows=1 loops=1)\n  SubPlan 1\n",
+            'line 2: "SubPlan 1" is not followed by its plan node',
+        ),
+        (
+            "Result (actual rows=1 loops=1)\n"
+            "  InitPlan 1\n"
+            "  ->  Seq Scan on t (actual rows=1 loops=1)\n",
+            'line 2: "InitPlan 1" is not followed by its plan node',
+        ),
+        (
+            "Result (actual rows=1 loops=1)\n"
+            "  SubPlan 1\n"
+            "    ->  Seq Scan on a (actual rows=1 loops=1)\n"
+            "    ->  Seq Scan on b (actual rows=1 loops=1)\n",
+            'line 4 is a second plan node under "SubPlan 1" (line 2)',
+        ),
+    ],
+)
+def test_a_subplan_header_has_exactly_one_node_right_under_it(text, message):
+    with pytest.raises(ValueError) as err:
+        parse_explain(text)
+    assert message in str(err.value)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Filter: (a > 0)",
+        "Filter:",
+        "Hash Cond: (a.id = b.id)",
+        "Rows Removed by Filter: 5",
+        "Sort Key: a",
+    ],
+)
+def test_a_property_sqd_reads_cannot_hide_in_a_skipped_block(line):
+    text = f"Seq Scan on t (actual rows=1 loops=1)\n  Unexpected:\n    {line}\n"
+    key = line.split(":")[0]
+    with pytest.raises(ValueError, match=f'line 3: "{key}" is indented under "Unexpected:"'):
+        parse_explain(text)
