@@ -339,6 +339,103 @@ def test_text_plan_rejects_what_it_cannot_read(text, message):
     assert "EXPLAIN (ANALYZE, BUFFERS)" in str(err.value)
 
 
+def _aligned(plain: str) -> str:
+    """The same plan as psql's default table output prints it."""
+    rows = plain.splitlines()
+    return "\n".join([" QUERY PLAN", "-" * 20, *(f" {row}" for row in rows), f"({len(rows)} rows)"])
+
+
+# A string literal with a newline splits the Filter; its second half looks like a property.
+SPLIT_LITERAL = (
+    "Seq Scan on t (actual rows=1 loops=1)\n" "  Filter: (s = 'x\n" "  Filter: y'::text)\n"
+)
+
+
+@pytest.mark.parametrize("text, line", [(SPLIT_LITERAL, 2), (_aligned(SPLIT_LITERAL), 4)])
+def test_a_quoted_value_split_across_lines_is_rejected(text, line):
+    with pytest.raises(ValueError, match=f"line {line}: a quoted value continues"):
+        parse_explain(text)
+
+
+def test_even_quotes_including_doubled_ones_are_read():
+    text = "Seq Scan on t (actual rows=1 loops=1)\n  Filter: (s = 'it''s'::text)\n"
+    assert parse_explain(text)["Plan"]["Filter"] == "(s = 'it''s'::text)"
+
+
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        (
+            "Result (actual rows=1 loops=1)\n"
+            "  Unexpected:\n"
+            "    ->  Seq Scan on t (actual rows=1 loops=1)\n",
+            'line 3 is a plan node indented under "Unexpected:"',
+        ),
+        (
+            "Seq Scan on t (actual rows=1 loops=1)\n"
+            "  Worker 0:  actual rows=1 loops=1\n"
+            "    SubPlan 1\n",
+            'line 3 is a plan node indented under "Worker 0:  actual rows=1 loops=1"',
+        ),
+        (
+            "Result (actual rows=1 loops=1)\n"
+            "Planning:\n"
+            "  ->  Seq Scan on t (actual rows=1 loops=1)\n",
+            'line 3 is a plan node indented under "Planning:"',
+        ),
+        (
+            "Sort (actual rows=1 loops=1)\n  Sort Key: a\n    Filter: (a > 0)\n",
+            "line 3 is indented to a column that matches no plan node",
+        ),
+    ],
+)
+def test_lines_under_a_block_or_sort_key_cannot_hide_plan_lines(text, message):
+    with pytest.raises(ValueError) as err:
+        parse_explain(text)
+    assert message in str(err.value)
+
+
+SERIALIZE = (
+    "Seq Scan on t (actual time=0.010..0.020 rows=1 loops=1)\n"
+    "  Buffers: shared hit=1\n"
+    "Planning Time: 0.050 ms\n"
+    "Serialization: time=0.015 ms  output=1kB  format=text\n"
+    "  Buffers: shared hit=2\n"
+    "  I/O Timings: shared read=0.010\n"
+    "Execution Time: 0.100 ms\n"
+)
+SERIALIZE_TIMING_OFF = (
+    "Seq Scan on t (actual rows=1 loops=1)\n"
+    "Serialization: output=1kB  format=text\n"
+    "  Buffers: shared hit=2\n"
+    "Execution Time: 0.100 ms\n"
+)
+
+
+@pytest.mark.parametrize(
+    "text", [SERIALIZE, _aligned(SERIALIZE), SERIALIZE_TIMING_OFF, _aligned(SERIALIZE_TIMING_OFF)]
+)
+def test_lines_under_a_summary_line_such_as_serialization_are_skipped(text):
+    plan = parse_explain(text)
+    assert plan["Execution Time"] == 0.1
+    assert plan["Plan"]["Relation Name"] == "t"
+
+
+@pytest.mark.parametrize("count, relationship", [(1, "child"), (2, "children")])
+def test_custom_scan_children_are_named_like_json(count, relationship):
+    lines = ["Custom Scan (ChunkAppend) on m (actual rows=1 loops=1)"]
+    lines += [f"  ->  Seq Scan on c{n} (actual rows=1 loops=1)" for n in range(count)]
+    root, *children = _nodes("\n".join(lines))
+    assert [c["Parent Relationship"] for c in children] == [relationship] * count
+
+
+def test_modify_table_children_get_no_parent_relationship():
+    root, child = _nodes(
+        "Update on t (actual rows=0 loops=1)\n  ->  Seq Scan on t (actual rows=1 loops=1)"
+    )
+    assert "Parent Relationship" not in child
+
+
 def test_text_plan_without_analyze_gets_the_without_analyze_message():
     with pytest.raises(ValueError, match="without ANALYZE"):
         parse_explain("Seq Scan on t  (cost=0.00..1.00 rows=1 width=4)\n  Filter: (a = 1)")

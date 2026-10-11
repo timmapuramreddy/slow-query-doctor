@@ -79,7 +79,7 @@ _STRATEGIES = {
     "SetOp": "Sorted",
     "HashSetOp": "Hashed",
 }
-_MEMBER_PARENTS = frozenset({"Append", "Merge Append", "BitmapAnd", "BitmapOr", "Custom Scan"})
+_MEMBER_PARENTS = frozenset({"Append", "Merge Append", "BitmapAnd", "BitmapOr"})
 
 _TEXT_PROPERTIES = frozenset(
     {"Filter", "Index Cond", "Recheck Cond", "Hash Cond", "Merge Cond", "Join Filter",
@@ -116,14 +116,24 @@ def parse_text_explain(text: str) -> dict[str, Any]:
     lines = _plan_lines(text)
     result: dict[str, Any] = {}
     frames: list[_Frame] = []
-    skip_under: int | None = None  # skip lines indented deeper than this column
-    in_summary = False
+    # Lines indented deeper than this column belong to a block sqd does not read.
+    skip_under: tuple[int, str] | None = None  # (column, the block's first line)
     last_sort_key: tuple[int, _Frame] | None = None  # the line just before was a Sort Key
     for no, line in lines:
         indent = len(line) - len(line.lstrip(" "))
         body = line[indent:]
+        if body.count("'") % 2:
+            raise ValueError(
+                f"line {no}: a quoted value continues on the next line; text EXPLAIN cannot "
+                "be read reliably here, save the plan as FORMAT JSON"
+            )
         if skip_under is not None:
-            if indent > skip_under:
+            if indent > skip_under[0]:
+                if body.startswith("->") or _SUBPLAN.fullmatch(body):
+                    raise ValueError(
+                        f'line {no} is a plan node indented under "{skip_under[1]}", '
+                        "which is not a plan node"
+                    )
                 continue
             skip_under = None
         if not frames:
@@ -135,12 +145,9 @@ def parse_text_explain(text: str) -> dict[str, Any]:
             frames.append(_Frame(col=2, node=result["Plan"]))
             continue
         if indent == 0:
-            in_summary = True
-            if _summary_line(body, no, result):
-                skip_under = 0
+            _summary_line(body, no, result)
+            skip_under = (0, body)  # e.g. Buffers under "Planning:" or "Serialization: ..."
             continue
-        if in_summary:
-            raise ValueError(f"line {no} is indented but follows the plan summary")
         sort_key, last_sort_key = last_sort_key, None
         if body.startswith("->"):
             label = body.removeprefix("->").lstrip(" ")
@@ -163,17 +170,17 @@ def parse_text_explain(text: str) -> dict[str, Any]:
             continue
         if prop or _MODIFY_TARGET.fullmatch(body):
             frame = _frame_at(frames, indent, no)
-            if prop and prop["key"] == "Sort Key":
+            if prop and prop["key"] == "Sort Key" and frame.node["Node Type"] == "Aggregate":
                 last_sort_key = (indent, frame)
             if frame.subplan:
                 raise ValueError(f"line {no} is indented under a SubPlan header, not a node")
             if prop is None or not prop["value"] or _WORKER.fullmatch(prop["key"]):
-                skip_under = indent  # a block such as "Worker 0:" with lines under it
+                skip_under = (indent, body)  # a block such as "Worker 0:" with lines under it
             else:
                 _set_property(frame, prop["key"], prop["value"], no)
             continue
         raise ValueError(f"line {no} is not a plan node, property or summary line")
-    _zero_never_executed_times(result["Plan"])
+    _finish(result["Plan"])
     return result
 
 
@@ -231,6 +238,10 @@ def _attach(frame: _Frame, child: dict[str, Any]) -> None:
         child["Parent Relationship"], child["Subplan Name"] = frame.subplan
     elif parent["Node Type"] in _MEMBER_PARENTS:
         child["Parent Relationship"] = "Member"
+    elif parent["Node Type"] == "ModifyTable":
+        pass  # Member before PostgreSQL 14, Outer since; text does not show the version
+    elif parent["Node Type"] == "Custom Scan":
+        pass  # "child" or "children" once all are known: see _finish
     elif parent["Node Type"] == "Subquery Scan":
         child["Parent Relationship"] = "Subquery"
     else:
@@ -373,10 +384,10 @@ def _grouping_sets(frame: _Frame) -> None:
     frame.node.pop("Sort Key", None)
 
 
-def _summary_line(line: str, no: int, result: dict[str, Any]) -> bool:
-    """Read a line after the tree. True if lines indented under it belong to it."""
+def _summary_line(line: str, no: int, result: dict[str, Any]) -> None:
+    """Read a line after the tree, such as Execution Time. Rejects anything else."""
     if _TRIGGER.fullmatch(line):
-        return False
+        return
     prop = _PROPERTY.fullmatch(line)
     if prop and prop["key"] in _SUMMARY:
         key, value = prop["key"], prop["value"]
@@ -385,18 +396,24 @@ def _summary_line(line: str, no: int, result: dict[str, Any]) -> bool:
             if not m:
                 raise ValueError(f'line {no}: "{key}" should be a time in ms')
             result[key] = float(m[1])
-        return not value
+        return
     node = _NODE_LINE.fullmatch(line)
     if node and (node["sc"] or node["ar"] or node["never"] or _read_label(node["label"])):
         raise ValueError(f"line {no} starts a second plan; give one plan per file")
     raise ValueError(f"line {no} is not a plan summary line such as Execution Time")
 
 
-def _zero_never_executed_times(root: dict[str, Any]) -> None:
-    """JSON gives never-executed nodes zero times when the plan has times at all."""
+def _finish(root: dict[str, Any]) -> None:
+    """Fields JSON gives that need the whole tree: Custom Scan child names, and zero times
+    on never-executed nodes when the plan has times at all."""
     nodes = [root]
     for node in nodes:
         nodes.extend(node.get("Plans", []))
+    for node in nodes:
+        if node["Node Type"] == "Custom Scan":
+            children = [p for p in node.get("Plans", []) if "Subplan Name" not in p]
+            for child in children:
+                child["Parent Relationship"] = "child" if len(children) == 1 else "children"
     if any("Actual Total Time" in n for n in nodes):
         for node in nodes:
             if node.get("Actual Loops") == 0 and "Actual Total Time" not in node:
