@@ -87,58 +87,72 @@ def _equals_one_value(condition: str, column: str) -> bool:
 Order = tuple[bool, bool]  # (descending, nulls first)
 
 
-def _order(text: str) -> Order:
-    """Order of a sort key or index column from its ASC / DESC / NULLS words.
+def _order(suffix: str) -> Order:
+    """Order from a suffix such as " DESC NULLS LAST", as EXPLAIN and pg_get_indexdef print it.
 
     Without NULLS, PostgreSQL puts nulls last going up and first going down.
     """
-    words = text.upper()
-    descending = bool(re.search(r"\bDESC\b", words))
-    if "NULLS FIRST" in words:
+    descending = suffix.startswith(" DESC")
+    if suffix.endswith(" NULLS FIRST"):
         return descending, True
-    return descending, descending and "NULLS LAST" not in words
+    return descending, descending and not suffix.endswith(" NULLS LAST")
 
 
-def _index_orders(definition: str) -> list[Order]:
-    """The order of each column in an index definition, as pg_get_indexdef prints it.
+def _btree_keys(definition: str) -> list[tuple[str, Order]] | None:
+    """Key columns and their order for a plain btree index from pg_get_indexdef, or None.
 
-    Example: "CREATE INDEX ix ON t USING btree (a, b DESC)" -> [(False, False), (True, True)].
+    None when sqd cannot tell what order the index gives: another index type, a partial
+    index, or a key with an expression, an operator class or a collation. INCLUDE columns
+    come after the keys and are not read.
+    Example: 'CREATE INDEX ix ON t USING btree (a, "B" DESC)' -> [("a", ...), ("B", ...)].
     """
     text = mask_literals(definition)
-    using = re.search(r"\bUSING \w+ \(", text)
-    pos = using.end() if using else text.find("(") + 1
-    orders: list[Order] = []
-    depth, start = 0, pos
-    while 0 < pos <= len(text) - 1 and depth >= 0:
+    using = re.search(r" USING btree \(", text)
+    if not using:
+        return None
+    parts: list[str] = []
+    depth, quoted, start, end = 0, False, using.end(), None
+    for pos in range(using.end(), len(text)):
         char = text[pos]
+        if char == '"':
+            quoted = not quoted  # "" inside a name toggles twice
+        if quoted or char not in "(),":
+            continue
         if char == "(":
             depth += 1
-        elif char == ")":
+        elif depth and char == ")":
             depth -= 1
-        if depth < 0 or (char == "," and depth == 0):
-            orders.append(_order(text[start:pos]))
+        elif not depth:
+            parts.append(definition[start:pos].strip())
             start = pos + 1
-        pos += 1
-    return orders
+            if char == ")":
+                end = pos
+                break
+    if end is None or " WHERE " in text[end:]:
+        return None
+    keys = [sort_key_column(part, set()) for part in parts]
+    if any(key is None for key in keys):
+        return None
+    return [(col, _order(order)) for col, order in keys if col]
 
 
 def _has_index(table: Table, first: list[str], keys: list[tuple[str, str]]) -> bool:
-    """True if an index starts with the columns of first (any order), then the sort keys.
+    """True if a plain btree index already is the one this rule would suggest.
 
-    The sort keys must match in name and order, or all be reversed: an index can be read
-    backwards.
+    That is the columns of first in any order, then the sort keys in the same order or all
+    reversed (an index can be read backwards). Any other index does not count, so the rule
+    may suggest an index close to one that exists, but never stays silent wrongly.
     """
-    wanted = [_order(order) for _, order in keys]
-    reversed_ = [(not desc, not nulls_first) for desc, nulls_first in wanted]
+    wanted = [(col, _order(order)) for col, order in keys]
+    reversed_ = [(col, (not desc, not nulls_first)) for col, (desc, nulls_first) in wanted]
     width = len(first) + len(keys)
     for ix in table.indexes:
-        orders = _index_orders(ix.definition)
-        orders += [(False, False)] * (len(ix.columns) - len(orders))
-        if (
-            set(ix.columns[: len(first)]) == set(first)
-            and ix.columns[len(first) : width] == [col for col, _ in keys]
-            and orders[len(first) : width] in (wanted, reversed_)
-        ):
+        index_keys = _btree_keys(ix.definition)
+        if index_keys is None or len(index_keys) < width:
+            continue
+        if {col for col, _ in index_keys[: len(first)]} == set(first) and index_keys[
+            len(first) : width
+        ] in (wanted, reversed_):
             return True
     return False
 

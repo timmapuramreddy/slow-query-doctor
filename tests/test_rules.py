@@ -1,7 +1,10 @@
 from dataclasses import replace
 
+import pytest
+
 from sqd.catalog import Catalog
 from sqd.rules import run_rules
+from sqd.rules.top_n_sort import _btree_keys
 
 
 def _seq_scan(filter_: str, kept: int = 3, removed: int = 999_997, alias: str = "students") -> dict:
@@ -862,8 +865,7 @@ def test_top_n_sort_silent_for_a_small_sort():
 
 
 def test_top_n_sort_silent_when_the_index_exists():
-    index = {"name": "ix", "columns": ["status", "first_name"], "definition": "(status, ...)"}
-    catalog = _catalog(indexes=[index])
+    catalog = _catalog(indexes=[_index("status, first_name", ["status", "first_name"])])
     assert _suggested_index(_top_n("(status = 'x'::text)", ["first_name"]), catalog) == []
 
 
@@ -917,3 +919,37 @@ def test_top_n_sort_looks_past_an_initplan_of_the_limit():
     initplan = {"Node Type": "Result", "Parent Relationship": "InitPlan", "Actual Rows": 1}
     plan["Plan"]["Plans"].insert(0, initplan)
     assert _suggested_index(plan) == ["CREATE INDEX ON students (first_name);"]
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "CREATE INDEX ix ON public.students USING btree (status) INCLUDE (first_name)",
+        "CREATE INDEX ix ON public.students USING gin (status, first_name)",
+        "CREATE INDEX ix ON public.students USING btree (status, first_name text_pattern_ops)",
+        'CREATE INDEX ix ON public.students USING btree (status, first_name COLLATE "C")',
+        'CREATE INDEX ix ON public.students USING btree (status COLLATE "C", first_name)',
+        "CREATE INDEX ix ON public.students USING btree (status, first_name) " "WHERE (id > 5)",
+    ],
+)
+def test_top_n_sort_fires_when_the_index_cannot_give_the_order(definition):
+    index = {"name": "ix", "columns": ["status", "first_name"], "definition": definition}
+    plan = _top_n("(status = 'x'::text)", ["first_name"])
+    assert _suggested_index(plan, _catalog(indexes=[index])) == [
+        "CREATE INDEX ON students (status, first_name);"
+    ]
+
+
+def test_top_n_sort_silent_when_the_index_has_extra_include_columns():
+    definition = "status, first_name) INCLUDE (id"
+    catalog = _catalog(indexes=[_index(definition, ["status", "first_name", "id"])])
+    assert _suggested_index(_top_n("(status = 'x'::text)", ["first_name"]), catalog) == []
+
+
+def test_btree_keys_reads_quoted_names_as_names():
+    definition = 'CREATE INDEX ix ON t USING btree ("desc", "a, b)" DESC, "x""y")'
+    assert _btree_keys(definition) == [
+        ("desc", (False, False)),
+        ("a, b)", (True, True)),
+        ('x"y', (False, False)),
+    ]
