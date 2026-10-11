@@ -349,17 +349,45 @@ def _aligned(plain: str) -> str:
 SPLIT_LITERAL = (
     "Seq Scan on t (actual rows=1 loops=1)\n" "  Filter: (s = 'x\n" "  Filter: y'::text)\n"
 )
+# The same with a column name that holds a newline.
+SPLIT_NAME = 'Seq Scan on t (actual rows=1 loops=1)\n  Filter: ("x\n  Filter: y" = 1)\n'
 
 
-@pytest.mark.parametrize("text, line", [(SPLIT_LITERAL, 2), (_aligned(SPLIT_LITERAL), 4)])
+@pytest.mark.parametrize(
+    "text, line",
+    [
+        (SPLIT_LITERAL, 2),
+        (_aligned(SPLIT_LITERAL), 4),
+        (SPLIT_NAME, 2),
+        (_aligned(SPLIT_NAME), 4),
+    ],
+)
 def test_a_quoted_value_split_across_lines_is_rejected(text, line):
     with pytest.raises(ValueError, match=f"line {line}: a quoted value continues"):
         parse_explain(text)
 
 
-def test_even_quotes_including_doubled_ones_are_read():
-    text = "Seq Scan on t (actual rows=1 loops=1)\n  Filter: (s = 'it''s'::text)\n"
-    assert parse_explain(text)["Plan"]["Filter"] == "(s = 'it''s'::text)"
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "(s = 'it''s'::text)",
+        '("it\'s" = 1)',
+        '("say ""hi""" = \'a"b\'::text)',
+    ],
+)
+def test_quotes_closed_on_the_same_line_are_read(expression):
+    text = f"Seq Scan on t (actual rows=1 loops=1)\n  Filter: {expression}\n"
+    assert parse_explain(text)["Plan"]["Filter"] == expression
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["  Filter:", "  Rows Removed by Filter:", "  Sort Key:", "  Hash Cond:"],
+)
+def test_a_property_sqd_reads_must_have_its_value_on_its_line(line):
+    text = f"Seq Scan on t (actual rows=1 loops=1)\n{line}\n    (a > 0)\n"
+    with pytest.raises(ValueError, match=f'line 2: "{line.strip()[:-1]}" has no value'):
+        parse_explain(text)
 
 
 @pytest.mark.parametrize(
@@ -385,6 +413,10 @@ def test_even_quotes_including_doubled_ones_are_read():
         ),
         (
             "Sort (actual rows=1 loops=1)\n  Sort Key: a\n    Filter: (a > 0)\n",
+            "line 3 is indented to a column that matches no plan node",
+        ),
+        (
+            "GroupAggregate (actual rows=1 loops=1)\n  Sort Key: a\n    Filter: (a > 0)\n",
             "line 3 is indented to a column that matches no plan node",
         ),
     ],

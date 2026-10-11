@@ -90,6 +90,7 @@ _NUMBER_PROPERTIES = frozenset(
      "Workers Planned", "Workers Launched", "Heap Fetches"}
 )  # fmt: skip
 _LIST_PROPERTIES = frozenset({"Sort Key", "Group Key", "Presorted Key"})
+_READ_PROPERTIES = _TEXT_PROPERTIES | _NUMBER_PROPERTIES | _LIST_PROPERTIES
 # Lines printed after the tree, at the first column.
 _SUMMARY = frozenset(
     {"Planning", "Planning Time", "Execution Time", "Serialization", "JIT", "Settings",
@@ -122,7 +123,7 @@ def parse_text_explain(text: str) -> dict[str, Any]:
     for no, line in lines:
         indent = len(line) - len(line.lstrip(" "))
         body = line[indent:]
-        if body.count("'") % 2:
+        if _ends_inside_quotes(body):
             raise ValueError(
                 f"line {no}: a quoted value continues on the next line; text EXPLAIN cannot "
                 "be read reliably here, save the plan as FORMAT JSON"
@@ -163,7 +164,7 @@ def parse_text_explain(text: str) -> dict[str, Any]:
             frames.append(_Frame(col=indent + 2, node=frame.node, subplan=(relationship, body)))
             continue
         prop = _PROPERTY.fullmatch(body)
-        if prop and sort_key and indent > sort_key[0]:
+        if prop and prop["key"] == "Group Key" and sort_key and indent > sort_key[0]:
             # Grouping sets print a Sort Key with the Group Keys it serves indented under it.
             _grouping_sets(sort_key[1])
             last_sort_key = sort_key
@@ -174,6 +175,8 @@ def parse_text_explain(text: str) -> dict[str, Any]:
                 last_sort_key = (indent, frame)
             if frame.subplan:
                 raise ValueError(f"line {no} is indented under a SubPlan header, not a node")
+            if prop and not prop["value"] and prop["key"] in _READ_PROPERTIES:
+                raise ValueError(f'line {no}: "{prop["key"]}" has no value on its line')
             if prop is None or not prop["value"] or _WORKER.fullmatch(prop["key"]):
                 skip_under = (indent, body)  # a block such as "Worker 0:" with lines under it
             else:
@@ -182,6 +185,22 @@ def parse_text_explain(text: str) -> dict[str, Any]:
         raise ValueError(f"line {no} is not a plan node, property or summary line")
     _finish(result["Plan"])
     return result
+
+
+def _ends_inside_quotes(line: str) -> bool:
+    """True if a '...' literal or "..." name is still open at the end of the line.
+
+    A quote of the other kind inside a quoted run is plain text; a doubled delimiter ('' or
+    "") closes and reopens the run, so escapes need no special case.
+    """
+    quote = ""
+    for char in line:
+        if quote:
+            if char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+    return bool(quote)
 
 
 def _plan_lines(text: str) -> list[tuple[int, str]]:
