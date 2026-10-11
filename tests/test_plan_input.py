@@ -67,6 +67,13 @@ def test_parse_explain_accepts_analyze_with_timing_off():
         ('{"Plan": {"Actual Rows": 1, "Plans": null}}', '"Plans" should be a list'),
         ('{"Plan": {"Actual Rows": 1, "Relation Name": 5}}', '"Relation Name" should be text'),
         ('{"Plan": {"Actual Rows": 1, "Hash Cond": ["x"]}}', '"Hash Cond" should be text'),
+        ('{"Plan": {"Actual Rows": 1, "Sort Key": "id"}}', '"Sort Key" should be a list'),
+        ('{"Plan": {"Actual Rows": 1, "Sort Key": [1]}}', '"Sort Key" should be a list'),
+        ('{"Plan": {"Actual Rows": 1, "Subplan Name": 1}}', '"Subplan Name" should be text'),
+        (
+            '{"Plan": {"Actual Rows": 1, "Plans": [{"Parent Relationship": null}]}}',
+            '"Parent Relationship" should be text',
+        ),
         ('{"Plan": {"Actual Rows": true}}', '"Actual Rows" should be a number'),
         ('{"Plan": {"Actual Rows": 1e400}}', '"Actual Rows" should be a number'),
         ('{"Plan": {"Actual Rows": NaN}}', '"Actual Rows" should be a number'),

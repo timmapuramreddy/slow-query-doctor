@@ -695,3 +695,178 @@ def test_date_filter_reads_and_quotes_mixed_case_column():
     assert [f.rule_id for f in findings] == ["non-sargable-date-filter"]
     assert "\"PlacedAt\" >= '2024-03-15'" in findings[0].suggestion
     assert findings[0].suggestion.endswith('CREATE INDEX ON "Orders" ("PlacedAt");')
+
+
+# Rule 8: subquery run once per row
+
+
+def _subplan(loops: int, rows: float, name: str = "SubPlan 1") -> dict:
+    """A scan of students whose filter runs a subplan reading `rows` rows per run."""
+    return {
+        "Node Type": "Materialize",
+        "Parent Relationship": "SubPlan",
+        "Subplan Name": name,
+        "Actual Rows": rows,
+        "Actual Loops": loops,
+        "Actual Total Time": 3.0,
+    }
+
+
+def _with_subplans(filter_: str, *subplans: dict) -> dict:
+    return {
+        "Plan": {
+            "Node Type": "Seq Scan",
+            "Relation Name": "students",
+            "Alias": "s",
+            "Filter": filter_,
+            "Actual Rows": 1,
+            "Actual Loops": 1,
+            "Actual Total Time": 700.0,
+            "Plans": list(subplans),
+        }
+    }
+
+
+def test_subquery_per_row_fires_on_real_slow_plan(fixture_loader):
+    plan, catalog = fixture_loader("subquery_per_row_slow")
+    findings = run_rules(plan, catalog)
+    assert [f.rule_id for f in findings] == ["subquery-per-row"]
+    assert findings[0].title == "NOT IN subquery ran 200 times"
+    assert findings[0].suggestion.startswith("Rewrite NOT IN (SELECT x FROM ...) as NOT EXISTS")
+
+
+def test_subquery_per_row_silent_for_not_exists_rewrite(fixture_loader):
+    plan, catalog = fixture_loader("subquery_per_row_fixed")
+    assert run_rules(plan, catalog) == []
+
+
+def test_subquery_per_row_silent_for_a_cheap_lookup_per_row():
+    # 8,274 runs of an index lookup returning 6 rows: 17 ms, faster than a JOIN rewrite.
+    plan = _with_subplans("(status = 'x'::text)", _subplan(loops=8_274, rows=6))
+    assert run_rules(plan, _catalog(rows=500)) == []
+
+
+def test_subquery_per_row_silent_for_a_hashed_subplan():
+    plan = _with_subplans(
+        "(NOT (ANY (id = (hashed SubPlan 1).col1)))", _subplan(loops=1, rows=300_000)
+    )
+    assert run_rules(plan, _catalog(rows=500)) == []
+
+
+def test_subquery_per_row_suggests_a_join_for_a_correlated_subquery():
+    plan = _with_subplans("((SubPlan 1) > 3)", _subplan(loops=500, rows=10_000))
+    findings = run_rules(plan, _catalog(rows=500))
+    assert [f.title for f in findings] == ["Subquery ran 500 times"]
+    assert findings[0].suggestion.startswith("Rewrite the subquery as a JOIN")
+
+
+def test_subquery_per_row_reads_the_postgres_16_not_in_filter():
+    plan = _with_subplans("(NOT (SubPlan 1))", _subplan(loops=500, rows=10_000))
+    findings = run_rules(plan, _catalog(rows=500))
+    assert [f.title for f in findings] == ["NOT IN subquery ran 500 times"]
+
+
+def test_subquery_per_row_matches_not_in_to_its_own_subplan():
+    # SubPlan 1 is a plain IN, SubPlan 2 the NOT IN; only SubPlan 2 gets the NOT EXISTS fix.
+    plan = _with_subplans(
+        "((NOT (ANY (id = (SubPlan 2).col1))) AND (ANY (email = (SubPlan 1).col1)))",
+        _subplan(loops=500, rows=10_000, name="SubPlan 1"),
+        _subplan(loops=500, rows=10_000, name="SubPlan 2"),
+    )
+    titles = sorted(f.title for f in run_rules(plan, _catalog(rows=500)))
+    assert titles == ["NOT IN subquery ran 500 times", "Subquery ran 500 times"]
+    by_title = {f.title: f.node for f in run_rules(plan, _catalog(rows=500))}
+    assert by_title["NOT IN subquery ran 500 times"].startswith("SubPlan 2 ")
+
+
+# Rule 9: ORDER BY ... LIMIT sorts the whole table
+
+
+def _top_n(filter_: str | None, keys: list[str], kept: int = 150_000, returned: int = 20) -> dict:
+    """Limit > Gather Merge > Sort > parallel Seq Scan of students, as in the real plan."""
+    scan = {
+        "Node Type": "Seq Scan",
+        "Parallel Aware": True,
+        "Relation Name": "students",
+        "Alias": "s",
+        "Actual Rows": kept / 3,
+        "Rows Removed by Filter": (1_000_000 - kept) / 3,
+        "Actual Loops": 3,
+        "Actual Total Time": 40.0,
+    }
+    if filter_:
+        scan["Filter"] = filter_
+    sort = {"Node Type": "Sort", "Sort Key": keys, "Actual Rows": returned, "Actual Loops": 3}
+    sort["Plans"] = [scan]
+    gather = {"Node Type": "Gather Merge", "Actual Rows": returned, "Actual Loops": 1}
+    gather["Plans"] = [sort]
+    return {
+        "Plan": {
+            "Node Type": "Limit",
+            "Actual Rows": returned,
+            "Actual Loops": 1,
+            "Actual Total Time": 50.0,
+            "Plans": [gather],
+        }
+    }
+
+
+def _suggested_index(plan: dict, catalog: Catalog | None = None) -> list[str]:
+    findings = run_rules(plan, catalog or _catalog())
+    return [f.suggestion.split(": ", 1)[1] for f in findings if f.rule_id == "top-n-sort"]
+
+
+def test_top_n_sort_fires_on_real_slow_plan(fixture_loader):
+    plan, catalog = fixture_loader("top_n_sort_slow")
+    findings = run_rules(plan, catalog)
+    assert [f.rule_id for f in findings] == ["top-n-sort"]
+    assert findings[0].title == "Sorted 142,695 rows of attendance to return 20"
+    assert findings[0].suggestion.endswith("CREATE INDEX ON attendance (status, class_date, id);")
+
+
+def test_top_n_sort_silent_after_index_is_added(fixture_loader):
+    plan, catalog = fixture_loader("top_n_sort_after_fix")
+    assert run_rules(plan, catalog) == []
+
+
+def test_top_n_sort_without_filter_indexes_the_sort_key():
+    plan = _top_n(None, ["s.first_name DESC"], kept=1_000_000)
+    assert _suggested_index(plan) == ["CREATE INDEX ON students (first_name);"]
+
+
+def test_top_n_sort_keeps_mixed_orders():
+    plan = _top_n("(status = 'x'::text)", ["first_name", "id DESC"])
+    assert _suggested_index(plan) == ["CREATE INDEX ON students (status, first_name, id DESC);"]
+
+
+def test_top_n_sort_skips_equality_columns_under_or():
+    plan = _top_n("((status = 'x'::text) OR (email = 'y'::text))", ["first_name"])
+    assert _suggested_index(plan) == ["CREATE INDEX ON students (first_name);"]
+
+
+def test_top_n_sort_does_not_put_an_any_list_first():
+    plan = _top_n("(status = ANY ('{x,y}'::text[]))", ["first_name"])
+    assert _suggested_index(plan) == ["CREATE INDEX ON students (first_name);"]
+
+
+def test_top_n_sort_silent_for_an_expression_sort_key():
+    assert _suggested_index(_top_n(None, ["(lower(s.first_name))"], kept=1_000_000)) == []
+
+
+def test_top_n_sort_silent_when_limit_keeps_many_rows():
+    assert _suggested_index(_top_n(None, ["first_name"], kept=100_000, returned=50_000)) == []
+
+
+def test_top_n_sort_silent_for_a_small_sort():
+    assert _suggested_index(_top_n("(status = 'x'::text)", ["first_name"], kept=5_000)) == []
+
+
+def test_top_n_sort_silent_when_the_index_exists():
+    index = {"name": "ix", "columns": ["status", "first_name"], "definition": "(status, ...)"}
+    catalog = _catalog(indexes=[index])
+    assert _suggested_index(_top_n("(status = 'x'::text)", ["first_name"]), catalog) == []
+
+
+def test_top_n_sort_leaves_a_selective_filter_to_the_missing_index_rule():
+    plan = _top_n("(status = 'x'::text)", ["first_name"], kept=30_000)
+    assert [f.rule_id for f in run_rules(plan, _catalog())] == ["missing-index"]
