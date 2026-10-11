@@ -953,3 +953,8 @@ def test_btree_keys_reads_quoted_names_as_names():
         ("a, b)", (True, True)),
         ('x"y', (False, False)),
     ]
+
+
+def test_btree_keys_does_not_read_a_quoted_name_as_the_using_clause():
+    definition = 'CREATE INDEX " USING btree (a, b)" ON t USING gin (c)'
+    assert _btree_keys(definition) is None

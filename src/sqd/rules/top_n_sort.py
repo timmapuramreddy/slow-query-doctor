@@ -85,6 +85,7 @@ def _equals_one_value(condition: str, column: str) -> bool:
 
 
 Order = tuple[bool, bool]  # (descending, nulls first)
+_QUOTED = re.compile(r'"(?:[^"]|"")*"')
 
 
 def _order(suffix: str) -> Order:
@@ -107,7 +108,9 @@ def _btree_keys(definition: str) -> list[tuple[str, Order]] | None:
     Example: 'CREATE INDEX ix ON t USING btree (a, "B" DESC)' -> [("a", ...), ("B", ...)].
     """
     text = mask_literals(definition)
-    using = re.search(r" USING btree \(", text)
+    # Search with quoted names blanked, so a name cannot pose as the USING clause.
+    names_blanked = _QUOTED.sub(lambda m: '"' + " " * (len(m.group()) - 2) + '"', text)
+    using = re.search(r" USING btree \(", names_blanked)
     if not using:
         return None
     parts: list[str] = []
