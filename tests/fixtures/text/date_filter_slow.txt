@@ -1,0 +1,12 @@
+Gather  (cost=1000.00..9462.00 rows=3000 width=21) (actual time=1.062..55.298 rows=803 loops=1)
+  Workers Planned: 2
+  Workers Launched: 2
+  Buffers: shared hit=4412
+  ->  Parallel Seq Scan on grades  (cost=0.00..8162.00 rows=1250 width=21) (actual time=0.385..51.257 rows=268 loops=3)
+        Filter: (date_trunc('day'::text, graded_at) = '2024-03-15 00:00:00+00'::timestamp with time zone)
+        Rows Removed by Filter: 199732
+        Buffers: shared hit=4412
+Planning:
+  Buffers: shared hit=86
+Planning Time: 0.355 ms
+Execution Time: 55.497 ms

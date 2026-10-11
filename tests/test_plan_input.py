@@ -19,16 +19,6 @@ def _fixture(name: str) -> dict:
     return json.loads((FIXTURES / f"{name}.json").read_text())
 
 
-@pytest.fixture
-def no_db(monkeypatch):
-    """Fail the test if anything tries to connect to a database."""
-
-    def refuse(*args, **kwargs):
-        raise AssertionError("tried to connect to a database")
-
-    monkeypatch.setattr(psycopg, "connect", refuse)
-
-
 def _write_inputs(tmp_path: Path, plan: object, catalog: object | None = None) -> list[str]:
     plan_file = tmp_path / "plan.json"
     plan_file.write_text(json.dumps(plan))
@@ -59,7 +49,8 @@ def test_parse_explain_accepts_analyze_with_timing_off():
 @pytest.mark.parametrize(
     "text, message",
     [
-        ("Seq Scan on attendance  (cost=0.00..18334.00 rows=3 width=12)", "not JSON"),
+        ("Seq Scan on attendance  (cost=0.00..18334.00 rows=3 width=12)", "without ANALYZE"),
+        ('[{"Plan": {"Actual Rows": 1}', "not valid JSON"),
         ('[{"Plan": {"Actual Rows": 1}}, {"Plan": {"Actual Rows": 1}}]', "one plan"),
         ('{"rows": 3}', 'no "Plan"'),
         ('[{"Plan": {"Node Type": "Seq Scan", "Plan Rows": 3}}]', "without ANALYZE"),

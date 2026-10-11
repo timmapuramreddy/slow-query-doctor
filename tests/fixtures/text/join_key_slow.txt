@@ -1,0 +1,19 @@
+Gather  (cost=1008.30..5506.17 rows=600 width=20) (actual time=1.162..26.506 rows=579 loops=1)
+  Workers Planned: 1
+  Workers Launched: 1
+  Buffers: shared hit=2261
+  ->  Hash Join  (cost=8.30..4446.17 rows=353 width=20) (actual time=0.550..23.893 rows=290 loops=2)
+        Hash Cond: (e.course_id = c.id)
+        Buffers: shared hit=2261
+        ->  Parallel Seq Scan on enrollments e  (cost=0.00..3970.71 rows=176471 width=18) (actual time=0.015..13.701 rows=150000 loops=2)
+              Buffers: shared hit=2206
+        ->  Hash  (cost=8.29..8.29 rows=1 width=10) (actual time=0.435..0.436 rows=1 loops=2)
+              Buckets: 1024  Batches: 1  Memory Usage: 9kB
+              Buffers: shared hit=7
+              ->  Index Scan using courses_code_key on courses c  (cost=0.27..8.29 rows=1 width=10) (actual time=0.431..0.432 rows=1 loops=2)
+                    Index Cond: (code = 'C0042'::text)
+                    Buffers: shared hit=7
+Planning:
+  Buffers: shared hit=254
+Planning Time: 1.818 ms
+Execution Time: 26.581 ms

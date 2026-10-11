@@ -1,0 +1,8 @@
+Limit  (cost=16176.92..16177.57 rows=20 width=19) (actual time=288.143..288.147 rows=20 loops=1)
+  Buffers: shared hit=4554
+  ->  Index Scan using attendance_pkey on attendance  (cost=0.42..32353.42 rows=1000000 width=19) (actual time=1.345..270.662 rows=500020 loops=1)
+        Buffers: shared hit=4554
+Planning:
+  Buffers: shared hit=70
+Planning Time: 0.203 ms
+Execution Time: 288.202 ms
