@@ -1153,11 +1153,15 @@ def test_row_estimate_names_a_join_as_the_source():
     [
         "(app.clean(status) = 'x'::text)",  # the helpers drop the schema name
         "(EXTRACT(year FROM (class_date + '1 day'::interval)) = '2024'::numeric)",  # cut short
+        "(replace(status, \"x)y\", ''::text) = ''::text)",  # cut at the ")" in "x)y"
     ],
 )
 def test_row_estimate_gives_no_exact_sql_for_an_expression_it_cannot_copy_whole(filter_):
     outer = _scan("attendance", filter_, 1, 60_000)
-    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), _attendance_catalog())
+    catalog = Catalog.from_dict(
+        {"attendance": {"rows": 1_000_000, "columns": ["status", "class_date", "x)y"]}}
+    )
+    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), catalog)
     assert finding.suggestion.endswith(
         "CREATE STATISTICS on the expressions in the filter, then ANALYZE attendance;"
     )

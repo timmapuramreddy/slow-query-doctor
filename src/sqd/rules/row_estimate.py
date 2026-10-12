@@ -93,7 +93,8 @@ def _is_whole(expression: str, filter_: str) -> bool:
     schema name comes before it in the filter (the helpers above read only the function's
     own name, and EXTRACT only up to its first closing bracket)."""
     masked = mask_literals(expression)
-    if masked.count("(") != masked.count(")"):
+    # An odd number of double quotes means a quoted name was cut, e.g. at a ")" inside it.
+    if masked.count("(") != masked.count(")") or masked.count('"') % 2:
         return False
     start = filter_.find(expression)
     while start >= 0:
