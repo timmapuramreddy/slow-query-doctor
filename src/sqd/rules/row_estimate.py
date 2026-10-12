@@ -39,11 +39,11 @@ def _child(node: PlanNode, relationship: str) -> PlanNode | None:
     return None
 
 
-def _runs(inner: PlanNode) -> int:
-    """Times the inner side really ran. Below a Memoize, only cache misses run it."""
+def _ran(inner: PlanNode) -> PlanNode:
+    """The node that really ran for each outer row. Below a Memoize, only cache misses run."""
     while inner.node_type == "Memoize" and inner.raw.get("Plans"):
         inner = inner.child(inner.raw["Plans"][0])
-    return inner.loops
+    return inner
 
 
 def _source(outer: PlanNode) -> PlanNode | None:
@@ -67,7 +67,7 @@ def _bad_loop(node: PlanNode) -> tuple[PlanNode, PlanNode, PlanNode] | None:
     if outer is None or inner is None:
         return None
     ratio = _ratio(outer)
-    if ratio is None or ratio < MIN_RATIO or _runs(inner) < MIN_RUNS:
+    if ratio is None or ratio < MIN_RATIO or _ran(inner).loops < MIN_RUNS:
         return None
     source = _source(outer)
     return (outer, inner, source) if source is not None else None
@@ -86,6 +86,21 @@ def _wrapped_expressions(filter_: str, columns: list[str]) -> list[str]:
     found += [expr for _, _, expr in date_wrapped_columns(filter_, columns)]
     unique = list(dict.fromkeys(found))
     return [e for e in unique if not any(e != other and e in other for other in unique)]
+
+
+def _is_whole(expression: str, filter_: str) -> bool:
+    """True if the expression can be copied into SQL as it is: its brackets balance and no
+    schema name comes before it in the filter (the helpers above read only the function's
+    own name, and EXTRACT only up to its first closing bracket)."""
+    masked = mask_literals(expression)
+    if masked.count("(") != masked.count(")"):
+        return False
+    start = filter_.find(expression)
+    while start >= 0:
+        if start and (filter_[start - 1] in '."$_' or filter_[start - 1].isalnum()):
+            return False
+        start = filter_.find(expression, start + 1)
+    return True
 
 
 def _suggestion(source: PlanNode, catalog: Catalog) -> str:
@@ -121,6 +136,8 @@ def _suggestion(source: PlanNode, catalog: Catalog) -> str:
     stats = quote_name(f"{source.relation}_{'_'.join(columns)}_stats")
     create = f"CREATE STATISTICS {stats} ON {', '.join(items)} FROM {name}; ANALYZE {name};"
     if expressions:
+        if not all(_is_whole(e, filter_) for e in expressions):
+            create = f"CREATE STATISTICS on the expressions in the filter, then ANALYZE {name};"
         return (
             f"PostgreSQL keeps statistics on columns, not on {' or '.join(expressions)}, so "
             "it guessed. Best: filter on the plain columns instead (for example a date range "
@@ -151,7 +168,8 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
             return []
     expected = round((source.estimated_rows or 0) * source.loops)
     what = source.relation or source.node_type
-    runs = _runs(inner)
+    ran = _ran(inner)
+    each = "each row" if ran is inner else "each row not already in its cache (Memoize)"
     return [
         Finding(
             rule_id=RULE_ID,
@@ -160,11 +178,11 @@ def check(node: PlanNode, catalog: Catalog) -> list[Finding]:
             explanation=(
                 f"PostgreSQL guessed {source.summary()} would return about {expected:,} rows; "
                 f"it returned about {source.actual_rows:,}. Expecting few rows, it chose a nested "
-                f"loop, which runs {inner.summary()} once for each row: {runs:,} times. For "
+                f"loop, which runs {ran.summary()} once for {each}: {ran.loops:,} times. For "
                 "this many rows a hash join, which reads each side once, is usually faster."
             ),
             suggestion=_suggestion(source, catalog),
-            node=f"{node.summary()} ({inner.node_type} ran {runs:,} times)",
+            node=f"{node.summary()} ({ran.node_type} ran {ran.loops:,} times)",
             time_ms=node.total_time_ms,
         )
     ]

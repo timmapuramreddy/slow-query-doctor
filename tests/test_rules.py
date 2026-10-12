@@ -1079,7 +1079,11 @@ def test_row_estimate_counts_cache_misses_under_memoize():
 
     outer = _scan("attendance", _WRAPPED, 10, 100_000)
     assert _row_estimate(_nested_loop(outer, memoize(500)), _attendance_catalog()) == []
-    assert len(_row_estimate(_nested_loop(outer, memoize(60_000)), _attendance_catalog())) == 1
+    [finding] = _row_estimate(_nested_loop(outer, memoize(60_000)), _attendance_catalog())
+    assert finding.node == "Nested Loop (Index Scan ran 60,000 times)"
+    assert "runs Index Scan on enrollments e once for each row not already in its cache" in (
+        finding.explanation
+    )
 
 
 def test_row_estimate_suggests_statistics_on_related_plain_columns():
@@ -1142,3 +1146,18 @@ def test_row_estimate_names_a_join_as_the_source():
     [finding] = _row_estimate(_nested_loop(join, _lookup(80_000)), _attendance_catalog())
     assert finding.title == "PostgreSQL expected 5 rows from Hash Join and got about 80,000"
     assert finding.suggestion.startswith("The guess went wrong at Hash Join")
+
+
+@pytest.mark.parametrize(
+    "filter_",
+    [
+        "(app.clean(status) = 'x'::text)",  # the helpers drop the schema name
+        "(EXTRACT(year FROM (class_date + '1 day'::interval)) = '2024'::numeric)",  # cut short
+    ],
+)
+def test_row_estimate_gives_no_exact_sql_for_an_expression_it_cannot_copy_whole(filter_):
+    outer = _scan("attendance", filter_, 1, 60_000)
+    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), _attendance_catalog())
+    assert finding.suggestion.endswith(
+        "CREATE STATISTICS on the expressions in the filter, then ANALYZE attendance;"
+    )
