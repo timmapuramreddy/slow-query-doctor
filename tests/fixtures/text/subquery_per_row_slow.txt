@@ -1,0 +1,18 @@
+Index Scan using students_pkey on students s  (cost=0.29..798102.99 rows=92 width=14) (actual time=1377.460..1422.475 rows=1 loops=1)
+  Index Cond: (id <= 200)
+  Filter: (NOT (ANY (id = (SubPlan 1).col1)))
+  Rows Removed by Filter: 199
+  Buffers: shared hit=2211, temp read=17098 written=516
+  SubPlan 1
+    ->  Materialize  (cost=0.00..7878.00 rows=300000 width=4) (actual time=0.002..4.027 rows=51789 loops=200)
+          Buffers: shared hit=2206, temp read=17098 written=516
+          ->  Seq Scan on enrollments  (cost=0.00..5206.00 rows=300000 width=4) (actual time=0.081..104.756 rows=300000 loops=1)
+                Buffers: shared hit=2206
+Planning:
+  Buffers: shared hit=122
+Planning Time: 5.862 ms
+JIT:
+  Functions: 10
+  Options: Inlining true, Optimization true, Expressions true, Deforming true
+  Timing: Generation 0.297 ms (Deform 0.128 ms), Inlining 60.872 ms, Optimization 36.006 ms, Emission 35.206 ms, Total 132.380 ms
+Execution Time: 1599.249 ms

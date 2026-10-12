@@ -8,6 +8,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
+from sqd.plan_text import parse_text_explain
+
 _STRING = re.compile(r"'(?:[^']|'')*'")
 # A plain lowercase name, or a quoted one such as "UserId" ("" inside is a literal quote).
 _NAME = r'(?:[a-z_][a-z0-9_$]*|"(?:[^"]|"")+")'
@@ -116,24 +118,36 @@ HOW_TO_GET_A_PLAN = (
 )
 
 
+_TEXT_PLAN_TOO = (
+    'Text output of psql -XqAt -c "EXPLAIN (ANALYZE, BUFFERS) <your query>" also works.'
+)
+
+
 def parse_explain(text: str | bytes) -> dict[str, Any]:
     """The EXPLAIN result from a shared plan file, in the shape explain_analyze() returns.
 
-    Accepts psql's one-element array or the bare object. Bytes may be UTF-8, -16 or -32
-    (json detects which), so files saved by PowerShell's `>` also read.
+    Accepts FORMAT JSON output (psql's one-element array or the bare object) or text
+    EXPLAIN (ANALYZE, BUFFERS) output, read by parse_text_explain into the same shape.
+    Bytes may be UTF-8, -16 or -32 (json detects which), so files saved by PowerShell's `>`
+    also read.
     """
-    try:
-        data = json.loads(text)
-    except ValueError:
-        raise ValueError(
-            f"The plan is not JSON (text-format EXPLAIN is not supported). {HOW_TO_GET_A_PLAN}"
-        ) from None
-    if isinstance(data, list):
-        if len(data) != 1:
-            raise ValueError(f"Expected one plan, got {len(data)}. {HOW_TO_GET_A_PLAN}")
-        data = data[0]
-    if not isinstance(data, dict) or not isinstance(data.get("Plan"), dict):
-        raise ValueError(f'The file has no "Plan" object. {HOW_TO_GET_A_PLAN}')
+    if isinstance(text, bytes):
+        try:
+            text = text.decode(json.detect_encoding(text))
+        except UnicodeDecodeError:
+            raise ValueError(
+                f"The plan file is not UTF-8, -16 or -32 text. {HOW_TO_GET_A_PLAN}"
+            ) from None
+    if text.lstrip().startswith(("[", "{")):
+        data = _parse_json_explain(text)
+    else:
+        try:
+            data = parse_text_explain(text)
+        except ValueError as exc:
+            raise ValueError(
+                f"The plan is neither FORMAT JSON nor text EXPLAIN output: {exc}. "
+                f"{HOW_TO_GET_A_PLAN} {_TEXT_PLAN_TOO}"
+            ) from None
     if "Actual Rows" not in data["Plan"]:
         raise ValueError(
             "The plan has no actual row counts: it was made without ANALYZE, and the rules "
@@ -144,6 +158,24 @@ def parse_explain(text: str | bytes) -> dict[str, Any]:
     )
     if problem:
         raise ValueError(f"The plan is not valid EXPLAIN output: {problem}. {HOW_TO_GET_A_PLAN}")
+    return data
+
+
+def _parse_json_explain(text: str) -> dict[str, Any]:
+    """The result object from FORMAT JSON output, before its fields are checked."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        raise ValueError(
+            "The plan starts like FORMAT JSON output but is not valid JSON. "
+            f"{HOW_TO_GET_A_PLAN} {_TEXT_PLAN_TOO}"
+        ) from None
+    if isinstance(data, list):
+        if len(data) != 1:
+            raise ValueError(f"Expected one plan, got {len(data)}. {HOW_TO_GET_A_PLAN}")
+        data = data[0]
+    if not isinstance(data, dict) or not isinstance(data.get("Plan"), dict):
+        raise ValueError(f'The file has no "Plan" object. {HOW_TO_GET_A_PLAN}')
     return data
 
 

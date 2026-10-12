@@ -130,12 +130,14 @@ def build_parser() -> argparse.ArgumentParser:
         "check",
         help="run EXPLAIN ANALYZE on a SELECT, or read a shared plan, and explain it",
         description="Explain why a query is slow. Give a SQL file to run EXPLAIN ANALYZE on "
-        "the database, or --plan with saved EXPLAIN (ANALYZE, FORMAT JSON) output to check it "
-        "without any database access.",
+        "the database, or --plan with saved EXPLAIN (ANALYZE, BUFFERS) output, JSON or text, "
+        "to check it without any database access.",
     )
     check.add_argument("file", nargs="?", help="file with one SELECT statement")
     check.add_argument(
-        "--plan", metavar="FILE", help="EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) output to read"
+        "--plan",
+        metavar="FILE",
+        help="EXPLAIN (ANALYZE, BUFFERS) output to read: FORMAT JSON or text",
     )
     check.add_argument(
         "--catalog",
@@ -148,10 +150,10 @@ def build_parser() -> argparse.ArgumentParser:
         "catalog-sql",
         help="print a read-only query that collects table info for a shared plan",
         description="Print SQL that reads row estimates, columns and indexes for the tables in "
-        "a plan. Run it on the database the plan came from: "
-        "psql -XqAt -f catalog.sql -o catalog.json",
+        "a plan (JSON or text EXPLAIN (ANALYZE, BUFFERS) output). Run it on the database the "
+        "plan came from: psql -XqAt -f catalog.sql -o catalog.json",
     )
-    catalog_sql.add_argument("plan", help="EXPLAIN (ANALYZE, FORMAT JSON) output")
+    catalog_sql.add_argument("plan", help="EXPLAIN (ANALYZE, BUFFERS) output: FORMAT JSON or text")
     catalog_sql.set_defaults(func=cmd_catalog_sql)
 
     compare = sub.add_parser(

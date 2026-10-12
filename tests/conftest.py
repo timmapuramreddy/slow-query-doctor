@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import psycopg
 import pytest
 
 from sqd.catalog import Catalog
@@ -20,3 +21,13 @@ def load_fixture(name: str) -> tuple[dict[str, Any], Catalog]:
 @pytest.fixture
 def fixture_loader():
     return load_fixture
+
+
+@pytest.fixture
+def no_db(monkeypatch):
+    """Fail the test if anything tries to connect to a database."""
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("tried to connect to a database")
+
+    monkeypatch.setattr(psycopg, "connect", refuse)

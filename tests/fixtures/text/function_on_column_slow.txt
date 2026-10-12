@@ -1,0 +1,8 @@
+Seq Scan on students  (cost=0.00..1290.00 rows=250 width=14) (actual time=1.606..18.006 rows=1 loops=1)
+  Filter: (lower((email)::text) = 'student4242@example.edu'::text)
+  Rows Removed by Filter: 49999
+  Buffers: shared hit=540
+Planning:
+  Buffers: shared hit=83
+Planning Time: 0.376 ms
+Execution Time: 18.053 ms

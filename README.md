@@ -19,7 +19,7 @@ Found 1 problem(s):
 
 - `sqd check <file.sql>` runs PostgreSQL's `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` and reads the plan.
 - Fixed rules find the problem, so every answer can be checked. No AI in v1.
-- `sqd check --plan plan.json` reads a plan someone saved on their own database. It never connects to a database. See [Share a slow query](#share-a-slow-query).
+- `sqd check --plan plan.json` reads a plan someone saved on their own database, as JSON or as text `EXPLAIN (ANALYZE, BUFFERS)` output. It never connects to a database. See [Share a slow query](#share-a-slow-query).
 - Only single `SELECT` statements are accepted, and they run in a read-only transaction that is rolled back. `EXPLAIN ANALYZE` really executes the query, so this matters.
 
 Then prove the fix:
@@ -110,7 +110,9 @@ You can check a slow query from your own database without giving anyone access t
    psql -XqAt -c "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT ..." > plan.json
    ```
 
-   Text-format `EXPLAIN` output is not supported. `-XqAt` makes psql print the raw JSON with no table borders.
+   `-XqAt` makes psql print the raw JSON with no table borders.
+
+   Text output of `EXPLAIN (ANALYZE, BUFFERS)` also works, from plain `psql` or `psql -XqAt`. JSON is still the better choice: it holds every detail of the plan, and the text form leaves some out.
 
 2. Make the table info query and run it on the same database. It only reads `pg_catalog`: row estimates, column names and index definitions for the tables in the plan.
 

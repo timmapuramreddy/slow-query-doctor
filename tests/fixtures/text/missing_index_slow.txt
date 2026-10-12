@@ -1,0 +1,16 @@
+Sort  (cost=12578.77..12578.78 rows=4 width=11) (actual time=52.762..54.381 rows=3 loops=1)
+  Sort Key: class_date
+  Sort Method: quicksort  Memory: 25kB
+  Buffers: shared hit=6373
+  ->  Gather  (cost=1000.00..12578.73 rows=4 width=11) (actual time=31.398..54.324 rows=3 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        Buffers: shared hit=6370
+        ->  Parallel Seq Scan on attendance  (cost=0.00..11578.33 rows=2 width=11) (actual time=20.539..37.367 rows=1 loops=3)
+              Filter: (enrollment_id = 4242)
+              Rows Removed by Filter: 333332
+              Buffers: shared hit=6370
+Planning:
+  Buffers: shared hit=79 dirtied=2
+Planning Time: 1.152 ms
+Execution Time: 54.482 ms
