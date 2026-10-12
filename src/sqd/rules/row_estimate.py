@@ -161,11 +161,16 @@ def _compared(column: str, filter_: str) -> bool:
 
 
 def _is_whole(expression: str, filter_: str) -> bool:
-    """True if the expression can be copied into SQL as it is: nothing in it is cut short and
-    no schema name comes before it in the filter. The helpers above read only a function's own
-    name, and stop at the first ")" in EXTRACT or at one inside a quoted name such as "x)y"."""
-    return _closes(expression) and not any(
-        start and (filter_[start - 1] in '."$_' or filter_[start - 1].isalnum())
+    """True if the expression can be copied into SQL as it is: nothing in it is cut short, no
+    schema name comes before it, and it is compared directly, as _compared asks of a column.
+
+    The helpers above read only a function's own name, and stop at the first ")" in EXTRACT or
+    at one inside a quoted name such as "x)y". A cast after the expression would be dropped,
+    and the uncast result may be a type statistics cannot be built on (json).
+    """
+    return _closes(expression) and all(
+        not (start and (filter_[start - 1] in '."$_' or filter_[start - 1].isalnum()))
+        and _COMPARISON.match(filter_, start + len(expression))
         for start in _starts(expression, filter_)
     )
 

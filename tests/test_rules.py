@@ -1157,12 +1157,19 @@ def test_row_estimate_names_a_join_as_the_source():
         "(replace(status, \"x)y\", ''::text) = ''::text)",  # cut at the ")" in "x)y"
         # A ' inside the quoted name "a'b" must not hide the open quote of "x)y.
         '(concat(status, "a\'b", \'q\'::text, "x)y") = status)',
+        # The cast to text would be dropped, leaving statistics on a json result.
+        "((json_extract_path(payload, VARIADIC '{s}'::text[]))::text = 'x'::text)",
     ],
 )
 def test_row_estimate_gives_no_exact_sql_for_an_expression_it_cannot_copy_whole(filter_):
     outer = _scan("attendance", filter_, 1, 60_000)
     catalog = Catalog.from_dict(
-        {"attendance": {"rows": 1_000_000, "columns": ["status", "class_date", "x)y", "a'b"]}}
+        {
+            "attendance": {
+                "rows": 1_000_000,
+                "columns": ["status", "class_date", "x)y", "a'b", "payload"],
+            }
+        }
     )
     [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), catalog)
     assert finding.suggestion.endswith(
