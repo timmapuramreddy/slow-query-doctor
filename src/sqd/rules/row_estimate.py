@@ -28,8 +28,8 @@ MIN_RUNS = 50_000
 # PostgreSQL allows at most 8 columns and expressions in one statistics object.
 MAX_STATISTICS_ITEMS = 8
 
-# What follows a column compared directly, as EXPLAIN prints it: "status = ", "(email)::text <> ".
-_COMPARISON = re.compile(r"\)?(?:::[a-z ]+(?:\([0-9, ]*\))?)?\)?\s+(?:=|<>|<=|>=|<|>)\s")
+# What follows a column compared directly, as EXPLAIN prints it: "status = ".
+_COMPARISON = re.compile(r"\s+(?:=|<>|<=|>=|<|>)\s")
 
 
 def _ratio(node: PlanNode) -> float | None:
@@ -150,8 +150,11 @@ def _starts(expression: str, filter_: str) -> list[int]:
 
 
 def _compared(column: str, filter_: str) -> bool:
-    """True if every use of the column in the filter compares it directly (=, <, >= ...), maybe
-    after a cast. Not for "payload ->> 'k'": statistics on a json column itself would fail."""
+    """True if every use of the column in the filter compares it directly (=, <, >= ...).
+
+    Not after an operator or a cast ("payload ->> 'k'", "(payload)::text"): sqd does not know
+    the column's type, and statistics on a json column itself would fail.
+    """
     name = re.escape(quote_name(column))
     uses = list(re.finditer(rf'(?<![\w$."]){name}(?![\w$"])', filter_))
     return bool(uses) and all(_COMPARISON.match(filter_, use.end()) for use in uses)

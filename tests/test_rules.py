@@ -1219,13 +1219,15 @@ def test_row_estimate_gives_no_exact_sql_for_a_column_used_through_an_operator()
     assert "CREATE STATISTICS attendance" not in finding.suggestion
 
 
-def test_row_estimate_reads_a_cast_column_as_compared_directly():
-    filter_ = "(((status)::text = 'late'::text) AND (class_date >= '2024-01-01'::date))"
+def test_row_estimate_gives_no_exact_sql_for_a_cast_column():
+    # (payload)::text compares text, but the statistics would be on the json column itself.
+    filter_ = "(((payload)::text = '{}'::text) AND (tenant_id = 42))"
+    catalog = Catalog.from_dict(
+        {"attendance": {"rows": 1_000_000, "columns": ["payload", "tenant_id"]}}
+    )
     [finding] = _row_estimate(
-        _nested_loop(_scan("attendance", filter_, 1, 60_000), _lookup(60_000)),
-        _attendance_catalog(),
+        _nested_loop(_scan("attendance", filter_, 1, 60_000), _lookup(60_000)), catalog
     )
     assert finding.suggestion.endswith(
-        "CREATE STATISTICS attendance_status_class_date_stats ON status, class_date "
-        "FROM attendance; ANALYZE attendance;"
+        "CREATE STATISTICS on 8 or fewer of those columns, then ANALYZE attendance;"
     )
