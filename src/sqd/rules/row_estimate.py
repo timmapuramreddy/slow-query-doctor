@@ -191,8 +191,9 @@ def _suggestion(source: PlanNode, catalog: Catalog) -> str:
     if source.relation is None:
         return (
             f"The guess went wrong at {source.node_type}, not at a single table. Run ANALYZE "
-            "on the tables it reads. If its join or filter compares columns that depend on "
-            "each other, CREATE STATISTICS on those columns can help."
+            "on the tables it reads. If the guess stays wrong, the columns it matches probably "
+            "depend on each other in a way PostgreSQL can't see. CREATE STATISTICS does not "
+            "help across a join."
         )
     name = quote_name(source.relation)
     if table is None:

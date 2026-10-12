@@ -1147,6 +1147,7 @@ def test_row_estimate_names_a_join_as_the_source():
     [finding] = _row_estimate(_nested_loop(join, _lookup(80_000)), _attendance_catalog())
     assert finding.title == "PostgreSQL expected 5 rows from Hash Join and got about 80,000"
     assert finding.suggestion.startswith("The guess went wrong at Hash Join")
+    assert finding.suggestion.endswith("CREATE STATISTICS does not help across a join.")
 
 
 @pytest.mark.parametrize(
