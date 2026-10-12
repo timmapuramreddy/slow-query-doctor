@@ -165,17 +165,25 @@ def _type_problem(node: dict[str, Any], where: str) -> str | None:
     """What is wrong with the types of the fields sqd reads, or None.
 
     Text: names, filters and join conditions. Numbers: actual counts and times.
+    Lists of text: sort keys.
     """
     for key, value in node.items():
         number = key.startswith(("Actual ", "Rows Removed by ")) or key == "Execution Time"
-        text = key in ("Node Type", "Relation Name", "Alias", "Index Name") or key.endswith(
-            (" Cond", "Filter")
-        )
+        text = key in _TEXT_KEYS or key.endswith((" Cond", "Filter"))
         if number and not _is_number(value):
             return f'"{key}" should be a number from 0 to 1e15 in {where}'
         if text and not number and not isinstance(value, str):
             return f'"{key}" should be text in {where}'
+        if key == "Sort Key" and not (
+            isinstance(value, list) and all(isinstance(item, str) for item in value)
+        ):
+            return f'"{key}" should be a list of text in {where}'
     return None
+
+
+_TEXT_KEYS = frozenset(
+    {"Node Type", "Relation Name", "Alias", "Index Name", "Parent Relationship", "Subplan Name"}
+)
 
 
 def _node_problem(node: object) -> str | None:
@@ -272,6 +280,20 @@ def referenced_columns(expression: str, columns: list[str]) -> list[str]:
         if token in known and token not in seen:
             seen.append(token)
     return seen
+
+
+# One "Sort Key" entry that is a plain column: the name, then the order as EXPLAIN prints it.
+_SORT_KEY = re.compile(rf"({_NAME})((?: DESC)?(?: NULLS (?:FIRST|LAST))?)")
+
+
+def sort_key_column(key: str, names: set[str]) -> tuple[str, str] | None:
+    """(column, order) for a "Sort Key" entry of one table, or None for an expression.
+
+    names are the table's alias and name, dropped from the key as in localize.
+    Example with names {"a"}: "a.class_date DESC" -> ("class_date", " DESC").
+    """
+    match = _SORT_KEY.fullmatch(localize(key, names))
+    return (unquote(match.group(1)), match.group(2)) if match else None
 
 
 _CALL = re.compile(r"\b([a-z_][a-z0-9_]*)\(")
