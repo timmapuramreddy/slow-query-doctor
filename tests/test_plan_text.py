@@ -62,13 +62,35 @@ def _nodes(text: str) -> list[dict]:
     return [n.raw for n in walk(parse_explain(text))]
 
 
+COUNT_KEYS = ("Actual Rows", "Actual Loops", "Rows Removed by Filter")
+
+
+def _below_gather(nodes: list) -> list[bool]:
+    """For each node, top first, whether a Gather or Gather Merge is above it."""
+    flags: list[bool] = []
+    gather_depth: int | None = None
+    for node in nodes:
+        if gather_depth is not None and node.depth <= gather_depth:
+            gather_depth = None
+        flags.append(gather_depth is not None)
+        if gather_depth is None and node.node_type in ("Gather", "Gather Merge"):
+            gather_depth = node.depth
+    return flags
+
+
 @pytest.mark.parametrize("name", SLOW_FIXTURES)
 def test_text_plan_reads_like_the_json_plan_of_the_same_query(name):
+    # The text and JSON plans come from two runs. Below a Gather, how many rows each worker
+    # handled changes between runs (a top-N Sort may pass up 16 rows or 17), so counts there
+    # are not compared.
     text_nodes = list(walk(parse_explain(_text(name))))
     json_nodes = list(walk(_json_plan(name)))
     assert [n.depth for n in text_nodes] == [n.depth for n in json_nodes]
-    for text_node, json_node in zip(text_nodes, json_nodes, strict=True):
+    parallel = _below_gather(json_nodes)
+    for text_node, json_node, below in zip(text_nodes, json_nodes, parallel, strict=True):
         for key in COMPARED_KEYS:
+            if below and key in COUNT_KEYS:
+                continue
             assert text_node.raw.get(key) == json_node.raw.get(key), (name, key)
 
 
