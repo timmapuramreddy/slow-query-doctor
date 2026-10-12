@@ -75,6 +75,8 @@ Both queries returned the same 3 row(s).
 | 5 | Date filters that can't use an index (`date_trunc('day', created_at) = ...`) | done |
 | 6 | Join on a column with no index | done |
 | 7 | Index finds the rows, then a filter throws most of them away | done |
+| 8 | Subquery that runs once per row (`NOT IN (SELECT ...)`) | done |
+| 9 | `ORDER BY ... LIMIT` sorts every matching row to return a few | done |
 
 Each pattern has a slow query and its fix in [`examples/`](examples/). The fix is either a rewritten query (`fixed.sql`, time it with `sqd compare slow.sql fixed.sql`) or an index to add (`fix.sql`, time it with `sqd compare slow.sql --setup fix.sql`).
 

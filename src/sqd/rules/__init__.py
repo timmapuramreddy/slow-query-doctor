@@ -13,6 +13,8 @@ from sqd.rules import (
     function_on_column,
     leading_wildcard,
     missing_index,
+    subquery_per_row,
+    top_n_sort,
 )
 from sqd.rules.base import Finding, Rule
 
@@ -24,6 +26,8 @@ RULES: list[Rule] = [
     deep_offset.check,
     date_filter.check,
     filter_after_index.check,
+    subquery_per_row.check,
+    top_n_sort.check,
 ]
 
 
