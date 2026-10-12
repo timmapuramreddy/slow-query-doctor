@@ -1184,3 +1184,12 @@ def test_row_estimate_gives_no_exact_sql_for_an_expression_it_cannot_copy_whole(
 )
 def test_row_estimate_closes_reads_strings_and_quoted_names(expression, whole):
     assert _closes(expression) is whole
+
+
+def test_row_estimate_ignores_function_like_text_inside_a_quoted_name():
+    outer = _scan("attendance", "(\"a nonexistent(status) z\" = 'x'::text)", 1, 60_000)
+    catalog = Catalog.from_dict(
+        {"attendance": {"rows": 1_000_000, "columns": ["status", "a nonexistent(status) z"]}}
+    )
+    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), catalog)
+    assert finding.suggestion.startswith("Run ANALYZE attendance; so PostgreSQL has current")

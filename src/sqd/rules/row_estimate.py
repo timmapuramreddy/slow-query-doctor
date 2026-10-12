@@ -88,42 +88,67 @@ def _wrapped_expressions(filter_: str, columns: list[str]) -> list[str]:
     return [e for e in unique if not any(e != other and e in other for other in unique)]
 
 
-def _closes(expression: str) -> bool:
-    """True if every 'string' and "quoted name" closes and every bracket outside them closes.
+def _outside_quotes(text: str) -> list[bool] | None:
+    """For each character, True if it is outside every 'string' and "quoted name".
 
-    Doubled quotes inside are escapes. Unlike mask_literals, a ' inside a quoted name such as
-    "a'b" does not start a string.
+    None if one does not close. Doubled quotes inside are escapes. Unlike mask_literals, a '
+    inside a quoted name such as "a'b" does not start a string.
     """
-    depth, quote, pos = 0, "", 0
-    while pos < len(expression):
-        char = expression[pos]
+    outside: list[bool] = []
+    quote, pos = "", 0
+    while pos < len(text):
+        char = text[pos]
+        if quote and text.startswith(quote * 2, pos):
+            outside += [False, False]
+            pos += 2
+            continue
         if quote:
-            if char == quote and expression.startswith(quote * 2, pos):
-                pos += 1
-            elif char == quote:
-                quote = ""
+            quote = "" if char == quote else quote
+            outside.append(False)
         elif char in "'\"":
             quote = char
-        elif char in "()":
+            outside.append(False)
+        else:
+            outside.append(True)
+        pos += 1
+    return None if quote else outside
+
+
+def _closes(expression: str) -> bool:
+    """True if every quote in the expression closes and so does every bracket outside them."""
+    outside = _outside_quotes(expression)
+    if outside is None:
+        return False
+    depth = 0
+    for char, out in zip(expression, outside, strict=True):
+        if out and char in "()":
             depth += 1 if char == "(" else -1
             if depth < 0:
                 return False
-        pos += 1
-    return not quote and depth == 0
+    return depth == 0
+
+
+def _starts(expression: str, filter_: str) -> list[int]:
+    """Where the expression appears in the filter outside quotes. The helpers above also find
+    function-like text inside a quoted name such as "a f(x) b"."""
+    outside = _outside_quotes(filter_) or []
+    found: list[int] = []
+    start = filter_.find(expression)
+    while start >= 0:
+        if start < len(outside) and outside[start]:
+            found.append(start)
+        start = filter_.find(expression, start + 1)
+    return found
 
 
 def _is_whole(expression: str, filter_: str) -> bool:
     """True if the expression can be copied into SQL as it is: nothing in it is cut short and
     no schema name comes before it in the filter. The helpers above read only a function's own
     name, and stop at the first ")" in EXTRACT or at one inside a quoted name such as "x)y"."""
-    if not _closes(expression):
-        return False
-    start = filter_.find(expression)
-    while start >= 0:
-        if start and (filter_[start - 1] in '."$_' or filter_[start - 1].isalnum()):
-            return False
-        start = filter_.find(expression, start + 1)
-    return True
+    return _closes(expression) and not any(
+        start and (filter_[start - 1] in '."$_' or filter_[start - 1].isalnum())
+        for start in _starts(expression, filter_)
+    )
 
 
 def _suggestion(source: PlanNode, catalog: Catalog) -> str:
@@ -148,7 +173,7 @@ def _suggestion(source: PlanNode, catalog: Catalog) -> str:
     if any(mark in mask_literals(filter_) for mark in ("$", "SubPlan", "InitPlan")):
         filter_ = ""
     columns = referenced_columns(filter_, table.columns)
-    expressions = _wrapped_expressions(filter_, table.columns)
+    expressions = [e for e in _wrapped_expressions(filter_, table.columns) if _starts(e, filter_)]
     plain = [c for c in columns if not any(c in referenced_columns(e, [c]) for e in expressions)]
     items = [quote_name(c) for c in plain] + [f"({e})" for e in expressions]
     if not expressions and len(plain) < 2:
