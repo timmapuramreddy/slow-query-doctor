@@ -1,0 +1,72 @@
+# Lint, format check and tests, including the integration tests against a throwaway Postgres.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: sqd
+          POSTGRES_DB: school
+          # CI-only container, thrown away after the job. Not a secret.
+          POSTGRES_PASSWORD: ci-only-not-secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sqd -d school"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      SQD_DATABASE_URL: postgresql://sqd:ci-only-not-secret@localhost:5432/school
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: pip install -e '.[dev]'
+
+      - name: Ruff
+        run: ruff check src tests
+
+      - name: Black
+        run: black --check src tests
+
+      - name: Load demo data
+        run: time sqd demo load
+
+      - name: Pytest
+        run: |
+          pytest -v -rs | tee pytest.log
+          # The integration tests skip without a database; here they must all run.
+          if grep -q SKIPPED pytest.log; then
+            echo "::error::Some tests were skipped; the integration tests must run in CI."
+            exit 1
+          fi

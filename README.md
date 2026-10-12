@@ -133,6 +133,8 @@ Read both files before you share them. The plan contains the literal values from
 
 ## Development
 
+CI (GitHub Actions) runs these checks on every pull request and push to main, including the database tests against a fresh `postgres:17` with the demo data loaded.
+
 ```
 ruff check src tests
 black --check src tests
