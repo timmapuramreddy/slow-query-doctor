@@ -16,6 +16,7 @@ EXPECTED = {
     "05-non-sargable-date": ["non-sargable-date-filter"],
     "06-join-missing-index": ["missing-index"],
     "07-filter-after-index": ["filter-after-index"],
+    "10-bad-row-estimate": ["bad-row-estimate"],
 }
 
 
@@ -86,6 +87,12 @@ def test_ensure_setup_keeps_strings_whole_and_splits_only_real_semicolons():
         ),
         ("create unique index on t (lower(x)); analyze t", 2),
         ("CREATE INDEX ON t (x) WHERE note <> 'a;b'", 1),
+        (
+            "CREATE STATISTICS s ON (lower(status)), (EXTRACT(year FROM class_date)) "
+            "FROM attendance; ANALYZE attendance;",
+            2,
+        ),
+        ("create statistics on a, b from t", 1),
     ],
 )
 def test_ensure_setup_accepts_index_extension_and_analyze(sql, count):
@@ -99,6 +106,7 @@ def test_ensure_setup_accepts_index_extension_and_analyze(sql, count):
         "-- only a comment",
         "DROP INDEX attendance_pkey",
         "CREATE TABLE t (x int)",
+        "DROP STATISTICS s",
         "CREATE INDEX CONCURRENTLY ON t (x)",
         "CREATE INDEX ON t (x); DELETE FROM t",
         "SELECT 1",

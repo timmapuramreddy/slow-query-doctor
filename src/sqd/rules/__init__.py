@@ -13,6 +13,7 @@ from sqd.rules import (
     function_on_column,
     leading_wildcard,
     missing_index,
+    row_estimate,
     subquery_per_row,
     top_n_sort,
 )
@@ -28,6 +29,7 @@ RULES: list[Rule] = [
     filter_after_index.check,
     subquery_per_row.check,
     top_n_sort.check,
+    row_estimate.check,
 ]
 
 

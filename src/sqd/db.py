@@ -121,15 +121,18 @@ def ensure_select(sql: str) -> str:
     return query
 
 
-_SETUP_STATEMENT = re.compile(r"(create\s+(unique\s+)?index|create\s+extension|analyze)\b", re.I)
+_SETUP_STATEMENT = re.compile(
+    r"(create\s+(unique\s+)?index|create\s+statistics|create\s+extension|analyze)\b", re.I
+)
 _CONCURRENTLY = re.compile(r"\bconcurrently\b", re.I)
 
 
 def ensure_setup(sql: str) -> list[str]:
     """Split a `compare --setup` file into statements, or raise if one is not allowed.
 
-    Only CREATE INDEX, CREATE EXTENSION and ANALYZE: what an index fix needs. They run in
-    the comparison's transaction, which is always rolled back.
+    Only CREATE INDEX, CREATE STATISTICS, CREATE EXTENSION and ANALYZE: what an index or
+    statistics fix needs. They run in the comparison's transaction, which is always rolled
+    back, so the index or statistics never stay in the database.
     """
     masked = mask_sql(sql)
     statements: list[str] = []
@@ -142,7 +145,8 @@ def ensure_setup(sql: str) -> list[str]:
         if not _SETUP_STATEMENT.match(check):
             first = check.split(None, 1)[0].upper()
             raise UnsafeQueryError(
-                f"--setup only allows CREATE INDEX, CREATE EXTENSION and ANALYZE, got {first}."
+                "--setup only allows CREATE INDEX, CREATE STATISTICS, CREATE EXTENSION and "
+                f"ANALYZE, got {first}."
             )
         if _CONCURRENTLY.search(check):
             raise UnsafeQueryError(

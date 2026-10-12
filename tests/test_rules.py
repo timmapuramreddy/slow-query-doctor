@@ -4,6 +4,7 @@ import pytest
 
 from sqd.catalog import Catalog
 from sqd.rules import run_rules
+from sqd.rules.row_estimate import _closes
 from sqd.rules.top_n_sort import _btree_keys
 
 
@@ -958,3 +959,297 @@ def test_btree_keys_reads_quoted_names_as_names():
 def test_btree_keys_does_not_read_a_quoted_name_as_the_using_clause():
     definition = 'CREATE INDEX " USING btree (a, b)" ON t USING gin (c)'
     assert _btree_keys(definition) is None
+
+
+# Rule 10: a far-too-low row estimate made a nested loop run many times
+
+
+def _scan(relation: str, filter_: str | None, estimate: float | None, rows: float) -> dict:
+    node = {
+        "Node Type": "Seq Scan",
+        "Parent Relationship": "Outer",
+        "Relation Name": relation,
+        "Alias": relation,
+        "Actual Rows": rows,
+        "Actual Loops": 1,
+        "Actual Total Time": 100.0,
+    }
+    if filter_ is not None:
+        node["Filter"] = filter_
+    if estimate is not None:
+        node["Plan Rows"] = estimate
+    return node
+
+
+def _lookup(loops: int) -> dict:
+    return {
+        "Node Type": "Index Scan",
+        "Parent Relationship": "Inner",
+        "Relation Name": "enrollments",
+        "Alias": "e",
+        "Index Name": "enrollments_pkey",
+        "Plan Rows": 1,
+        "Actual Rows": 1,
+        "Actual Loops": loops,
+        "Actual Total Time": 0.003,
+    }
+
+
+def _nested_loop(outer: dict, inner: dict) -> dict:
+    return {
+        "Plan": {
+            "Node Type": "Nested Loop",
+            "Plan Rows": outer.get("Plan Rows", 1),
+            "Actual Rows": outer["Actual Rows"],
+            "Actual Loops": 1,
+            "Actual Total Time": 500.0,
+            "Plans": [outer, inner],
+        }
+    }
+
+
+def _attendance_catalog(table: str = "attendance") -> Catalog:
+    return Catalog.from_dict(
+        {table: {"rows": 1_000_000, "columns": ["id", "status", "class_date"], "indexes": []}}
+    )
+
+
+_WRAPPED = (
+    "((lower(status) = 'present'::text) AND (EXTRACT(year FROM class_date) = '2024'::numeric))"
+)
+
+
+def _row_estimate(plan: dict, catalog: Catalog) -> list:
+    return [f for f in run_rules(plan, catalog) if f.rule_id == "bad-row-estimate"]
+
+
+def test_row_estimate_fires_once_on_real_slow_plan(fixture_loader):
+    # Two stacked nested loops share one bad guess on attendance: one finding, on the lower one.
+    plan, catalog = fixture_loader("row_estimate_slow")
+    findings = run_rules(plan, catalog)
+    assert [f.rule_id for f in findings] == ["bad-row-estimate"]
+    assert findings[0].title.startswith("PostgreSQL expected 30 rows from attendance and got about")
+    assert "ran 372,907 times" in findings[0].node
+    assert findings[0].suggestion.endswith(
+        "CREATE STATISTICS attendance_status_class_date_stats ON (lower(status)), "
+        "(EXTRACT(year FROM class_date)) FROM attendance; ANALYZE attendance;"
+    )
+
+
+@pytest.mark.parametrize("name", ["row_estimate_after_fix", "row_estimate_fixed"])
+def test_row_estimate_silent_after_either_fix(fixture_loader, name):
+    plan, catalog = fixture_loader(name)
+    assert run_rules(plan, catalog) == []
+
+
+def test_row_estimate_fix_in_the_example_matches_the_suggestion(fixture_loader):
+    from pathlib import Path
+
+    plan, catalog = fixture_loader("row_estimate_slow")
+    fix = Path(__file__).parent.parent / "examples" / "10-bad-row-estimate" / "fix.sql"
+    statements = " ".join(
+        line for line in fix.read_text().splitlines() if not line.startswith("--")
+    )
+    assert " ".join(statements.split()) in run_rules(plan, catalog)[0].suggestion
+
+
+@pytest.mark.parametrize(
+    "estimate, rows, loops",
+    [
+        (10_000, 99_000, 99_000),  # off by 9.9x: close enough
+        (10, 49_999, 49_999),  # off by 5,000x, but too few runs to cost much
+        (None, 100_000, 100_000),  # COSTS OFF text plan: no estimate to compare
+    ],
+)
+def test_row_estimate_silent_below_thresholds(estimate, rows, loops):
+    plan = _nested_loop(_scan("attendance", _WRAPPED, estimate, rows), _lookup(loops))
+    assert _row_estimate(plan, _attendance_catalog()) == []
+
+
+def test_row_estimate_counts_cache_misses_under_memoize():
+    def memoize(misses: int) -> dict:
+        lookup = {**_lookup(misses), "Parent Relationship": "Outer"}
+        return {
+            "Node Type": "Memoize",
+            "Parent Relationship": "Inner",
+            "Actual Rows": 1,
+            "Actual Loops": 100_000,
+            "Actual Total Time": 0.001,
+            "Plans": [lookup],
+        }
+
+    outer = _scan("attendance", _WRAPPED, 10, 100_000)
+    assert _row_estimate(_nested_loop(outer, memoize(500)), _attendance_catalog()) == []
+    [finding] = _row_estimate(_nested_loop(outer, memoize(60_000)), _attendance_catalog())
+    assert finding.node == "Nested Loop (Index Scan ran 60,000 times)"
+    assert "runs Index Scan on enrollments e once for each row not already in its cache" in (
+        finding.explanation
+    )
+
+
+def test_row_estimate_suggests_statistics_on_related_plain_columns():
+    filter_ = "((status = 'late'::text) AND (class_date = '2024-03-04'::date))"
+    outer = _scan("attendance", filter_, 1, 60_000)
+    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), _attendance_catalog())
+    assert "If status, class_date depend on each other" in finding.suggestion
+    assert finding.suggestion.endswith(
+        "CREATE STATISTICS attendance_status_class_date_stats ON status, class_date "
+        "FROM attendance; ANALYZE attendance;"
+    )
+
+
+@pytest.mark.parametrize(
+    "filter_",
+    [
+        "(status = 'late'::text)",  # one plain column: no multi-column statistics to add
+        None,
+        "(lower(status) = (SubPlan 1))",  # a subplan cannot go into CREATE STATISTICS
+        "(lower(status) = lower(e.status))",  # nor another table's column
+    ],
+)
+def test_row_estimate_falls_back_to_analyze(filter_):
+    outer = _scan("attendance", filter_, 1, 60_000)
+    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), _attendance_catalog())
+    assert finding.suggestion.startswith("Run ANALYZE attendance; so PostgreSQL has current")
+
+
+def test_row_estimate_quotes_mixed_case_names():
+    outer = _scan("Visits", "(lower(\"Status\") = 'x'::text)", 1, 60_000)
+    catalog = Catalog.from_dict({"Visits": {"rows": 1_000_000, "columns": ["Status"]}})
+    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), catalog)
+    assert finding.suggestion.endswith(
+        'CREATE STATISTICS "Visits_Status_stats" ON (lower("Status")) FROM "Visits"; '
+        'ANALYZE "Visits";'
+    )
+
+
+def test_row_estimate_without_catalog_gives_general_advice():
+    plan = _nested_loop(_scan("attendance", _WRAPPED, 10, 100_000), _lookup(100_000))
+    [finding] = _row_estimate(plan, Catalog({}))
+    assert finding.suggestion.startswith("Run ANALYZE attendance; to refresh its statistics.")
+    assert finding.suggestion.endswith("Add --catalog for the exact SQL.")
+
+
+def test_row_estimate_names_a_join_as_the_source():
+    # The scans below were guessed well; the join between them was not.
+    join = {
+        "Node Type": "Hash Join",
+        "Parent Relationship": "Outer",
+        "Plan Rows": 5,
+        "Actual Rows": 80_000,
+        "Actual Loops": 1,
+        "Actual Total Time": 90.0,
+        "Plans": [
+            _scan("attendance", None, 1_000_000, 1_000_000),
+            {**_scan("students", None, 50_000, 50_000), "Parent Relationship": "Inner"},
+        ],
+    }
+    [finding] = _row_estimate(_nested_loop(join, _lookup(80_000)), _attendance_catalog())
+    assert finding.title == "PostgreSQL expected 5 rows from Hash Join and got about 80,000"
+    assert finding.suggestion.startswith("The guess went wrong at Hash Join")
+    assert finding.suggestion.endswith("CREATE STATISTICS does not help across a join.")
+
+
+@pytest.mark.parametrize(
+    "filter_",
+    [
+        "(app.clean(status) = 'x'::text)",  # the helpers drop the schema name
+        "(EXTRACT(year FROM (class_date + '1 day'::interval)) = '2024'::numeric)",  # cut short
+        "(replace(status, \"x)y\", ''::text) = ''::text)",  # cut at the ")" in "x)y"
+        # A ' inside the quoted name "a'b" must not hide the open quote of "x)y.
+        '(concat(status, "a\'b", \'q\'::text, "x)y") = status)',
+        # The cast to text would be dropped, leaving statistics on a json result.
+        "((json_extract_path(payload, VARIADIC '{s}'::text[]))::text = 'x'::text)",
+    ],
+)
+def test_row_estimate_gives_no_exact_sql_for_an_expression_it_cannot_copy_whole(filter_):
+    outer = _scan("attendance", filter_, 1, 60_000)
+    catalog = Catalog.from_dict(
+        {
+            "attendance": {
+                "rows": 1_000_000,
+                "columns": ["status", "class_date", "x)y", "a'b", "payload"],
+            }
+        }
+    )
+    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), catalog)
+    assert finding.suggestion.endswith(
+        "CREATE STATISTICS on up to 8 of the expressions in the filter, then ANALYZE attendance;"
+    )
+
+
+@pytest.mark.parametrize(
+    "expression, whole",
+    [
+        ("lower(status)", True),
+        ('lower("Status")', True),
+        ("replace(status, '(', ''::text)", True),  # brackets inside a string do not count
+        ('lower("a""b)c")', True),  # doubled quote inside a quoted name
+        ("EXTRACT(year FROM (class_date + '1 day'::interval)", False),
+        ('replace(status, "x)', False),
+        ("lower(status))", False),
+    ],
+)
+def test_row_estimate_closes_reads_strings_and_quoted_names(expression, whole):
+    assert _closes(expression) is whole
+
+
+def test_row_estimate_ignores_function_like_text_inside_a_quoted_name():
+    outer = _scan("attendance", "(\"a nonexistent(status) z\" = 'x'::text)", 1, 60_000)
+    catalog = Catalog.from_dict(
+        {"attendance": {"rows": 1_000_000, "columns": ["status", "a nonexistent(status) z"]}}
+    )
+    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), catalog)
+    assert finding.suggestion.startswith("Run ANALYZE attendance; so PostgreSQL has current")
+
+
+def test_row_estimate_gives_no_exact_sql_for_more_than_eight_columns():
+    columns = [f"c{n}" for n in range(9)]
+    filter_ = "(" + " AND ".join(f"({c} = 1)" for c in columns) + ")"
+    catalog = Catalog.from_dict({"attendance": {"rows": 1_000_000, "columns": columns}})
+    [finding] = _row_estimate(
+        _nested_loop(_scan("attendance", filter_, 1, 60_000), _lookup(60_000)), catalog
+    )
+    assert finding.suggestion.endswith(
+        "CREATE STATISTICS on 8 or fewer of those columns, then ANALYZE attendance;"
+    )
+
+
+def test_row_estimate_gives_no_exact_sql_for_a_column_used_through_an_operator():
+    # Statistics on the json column payload itself would fail: json has no ordering.
+    filter_ = "(((payload ->> 'status'::text) = 'active'::text) AND (tenant_id = 42))"
+    catalog = Catalog.from_dict(
+        {"attendance": {"rows": 1_000_000, "columns": ["payload", "tenant_id"]}}
+    )
+    [finding] = _row_estimate(
+        _nested_loop(_scan("attendance", filter_, 1, 60_000), _lookup(60_000)), catalog
+    )
+    assert "CREATE STATISTICS attendance" not in finding.suggestion
+
+
+def test_row_estimate_gives_no_exact_sql_for_a_cast_column():
+    # (payload)::text compares text, but the statistics would be on the json column itself.
+    filter_ = "(((payload)::text = '{}'::text) AND (tenant_id = 42))"
+    catalog = Catalog.from_dict(
+        {"attendance": {"rows": 1_000_000, "columns": ["payload", "tenant_id"]}}
+    )
+    [finding] = _row_estimate(
+        _nested_loop(_scan("attendance", filter_, 1, 60_000), _lookup(60_000)), catalog
+    )
+    assert finding.suggestion.endswith(
+        "CREATE STATISTICS on 8 or fewer of those columns, then ANALYZE attendance;"
+    )
+
+
+def test_row_estimate_does_not_blame_a_subplan_that_only_removes_rows():
+    # Both guesses are off, but the NOT IN list on students only removes attendance rows.
+    subplan = {
+        **_scan("students", None, 10, 5_000),
+        "Parent Relationship": "SubPlan",
+        "Subplan Name": "SubPlan 1",
+    }
+    filter_ = "((status = 'late'::text) AND (class_date = '2024-03-04'::date) AND (NOT (ANY "
+    filter_ += "(id = (hashed SubPlan 1).col1))))"
+    outer = {**_scan("attendance", filter_, 1, 60_000), "Plans": [subplan]}
+    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), _attendance_catalog())
+    assert finding.title == "PostgreSQL expected 1 rows from attendance and got about 60,000"

@@ -77,6 +77,12 @@ class PlanNode:
         return round(float(self.raw.get("Actual Rows", 0)) * self.loops)
 
     @property
+    def estimated_rows(self) -> float | None:
+        """Rows per loop PostgreSQL expected ("Plan Rows"), or None if the plan has no costs."""
+        value = self.raw.get("Plan Rows")
+        return None if value is None else float(value)
+
+    @property
     def rows_removed_by_filter(self) -> int:
         return round(float(self.raw.get("Rows Removed by Filter", 0)) * self.loops)
 
@@ -196,11 +202,14 @@ def _is_number(value: object) -> bool:
 def _type_problem(node: dict[str, Any], where: str) -> str | None:
     """What is wrong with the types of the fields sqd reads, or None.
 
-    Text: names, filters and join conditions. Numbers: actual counts and times.
+    Text: names, filters and join conditions. Numbers: row estimates, actual counts and times.
     Lists of text: sort keys.
     """
     for key, value in node.items():
-        number = key.startswith(("Actual ", "Rows Removed by ")) or key == "Execution Time"
+        number = key.startswith(("Actual ", "Rows Removed by ")) or key in (
+            "Execution Time",
+            "Plan Rows",
+        )
         text = key in _TEXT_KEYS or key.endswith((" Cond", "Filter"))
         if number and not _is_number(value):
             return f'"{key}" should be a number from 0 to 1e15 in {where}'

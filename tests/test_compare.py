@@ -101,3 +101,24 @@ def test_compare_with_setup_times_the_index_fix_and_rolls_it_back():
     assert before.rows_digest == after.rows_digest
     assert setup_ms > 0
     assert not catalog.tables["attendance"].has_leading_index("enrollment_id")
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not os.environ.get(db.DSN_ENV), reason="needs SQD_DATABASE_URL")
+def test_compare_with_setup_times_the_statistics_fix_and_rolls_it_back():
+    import psycopg
+
+    folder = EXAMPLES / "10-bad-row-estimate"
+    slow = ("slow.sql", (folder / "slow.sql").read_text())
+    with psycopg.connect(db.get_dsn()) as conn:
+        before, after, _ = compare_with_setup(
+            conn, slow, slow, (folder / "fix.sql").read_text(), runs=2, warmup=1
+        )
+        left = conn.execute(
+            "SELECT count(*) FROM pg_statistic_ext "
+            "WHERE stxname = 'attendance_status_class_date_stats'"
+        ).fetchone()
+        conn.rollback()
+    assert after.median_ms < before.median_ms
+    assert before.rows_digest == after.rows_digest
+    assert left == (0,)

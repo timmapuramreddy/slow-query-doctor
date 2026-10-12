@@ -124,9 +124,10 @@ def compare_with_setup(
 ) -> tuple[Timing, Timing, float]:
     """Time `before` on the database as it is, then `after` with the setup applied.
 
-    The setup (CREATE INDEX ...) runs in one transaction that is always rolled back, so the
-    database ends as it started. The timed queries still run read-only. Runs cannot take
-    turns, because the index exists only inside that transaction: all `before` runs come first.
+    The setup (CREATE INDEX, CREATE STATISTICS ...) runs in one transaction that is always
+    rolled back, so the database ends as it started. The timed queries still run read-only.
+    Runs cannot take turns, because the index or statistics exist only inside that
+    transaction: all `before` runs come first.
     While it runs, CREATE INDEX blocks writes to the table. Returns (before, after, setup ms).
     """
     if runs < 1 or warmup < 0:
