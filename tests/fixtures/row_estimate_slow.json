@@ -1,0 +1,378 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Aggregate",
+      "Strategy": "Sorted",
+      "Partial Mode": "Finalize",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 15791.09,
+      "Total Cost": 15791.95,
+      "Plan Rows": 3,
+      "Plan Width": 16,
+      "Actual Startup Time": 971.982,
+      "Actual Total Time": 974.032,
+      "Actual Rows": 3,
+      "Actual Loops": 1,
+      "Group Key": [
+        "s.status"
+      ],
+      "Shared Hit Blocks": 2616739,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Gather Merge",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 15791.09,
+          "Total Cost": 15791.89,
+          "Plan Rows": 6,
+          "Plan Width": 16,
+          "Actual Startup Time": 969.917,
+          "Actual Total Time": 974.026,
+          "Actual Rows": 9,
+          "Actual Loops": 1,
+          "Workers Planned": 2,
+          "Workers Launched": 2,
+          "Shared Hit Blocks": 2616739,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Aggregate",
+              "Strategy": "Sorted",
+              "Partial Mode": "Partial",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 14791.07,
+              "Total Cost": 14791.17,
+              "Plan Rows": 3,
+              "Plan Width": 16,
+              "Actual Startup Time": 948.159,
+              "Actual Total Time": 951.959,
+              "Actual Rows": 3,
+              "Actual Loops": 3,
+              "Group Key": [
+                "s.status"
+              ],
+              "Shared Hit Blocks": 2616739,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Workers": [],
+              "Plans": [
+                {
+                  "Node Type": "Sort",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 14791.07,
+                  "Total Cost": 14791.09,
+                  "Plan Rows": 10,
+                  "Plan Width": 8,
+                  "Actual Startup Time": 938.216,
+                  "Actual Total Time": 943.623,
+                  "Actual Rows": 124302,
+                  "Actual Loops": 3,
+                  "Sort Key": [
+                    "s.status"
+                  ],
+                  "Sort Method": "quicksort",
+                  "Sort Space Used": 4096,
+                  "Sort Space Type": "Memory",
+                  "Shared Hit Blocks": 2616739,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Workers": [
+                    {
+                      "Worker Number": 0,
+                      "Sort Method": "quicksort",
+                      "Sort Space Used": 3073,
+                      "Sort Space Type": "Memory"
+                    },
+                    {
+                      "Worker Number": 1,
+                      "Sort Method": "quicksort",
+                      "Sort Space Used": 4096,
+                      "Sort Space Type": "Memory"
+                    }
+                  ],
+                  "Plans": [
+                    {
+                      "Node Type": "Nested Loop",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Join Type": "Inner",
+                      "Startup Cost": 0.71,
+                      "Total Cost": 14790.9,
+                      "Plan Rows": 10,
+                      "Plan Width": 8,
+                      "Actual Startup Time": 0.355,
+                      "Actual Total Time": 915.199,
+                      "Actual Rows": 124302,
+                      "Actual Loops": 3,
+                      "Inner Unique": true,
+                      "Shared Hit Blocks": 2616723,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0,
+                      "Workers": [],
+                      "Plans": [
+                        {
+                          "Node Type": "Nested Loop",
+                          "Parent Relationship": "Outer",
+                          "Parallel Aware": false,
+                          "Async Capable": false,
+                          "Join Type": "Inner",
+                          "Startup Cost": 0.42,
+                          "Total Cost": 14787.73,
+                          "Plan Rows": 10,
+                          "Plan Width": 4,
+                          "Actual Startup Time": 0.299,
+                          "Actual Total Time": 618.016,
+                          "Actual Rows": 124302,
+                          "Actual Loops": 3,
+                          "Inner Unique": true,
+                          "Shared Hit Blocks": 1498000,
+                          "Shared Read Blocks": 0,
+                          "Shared Dirtied Blocks": 0,
+                          "Shared Written Blocks": 0,
+                          "Local Hit Blocks": 0,
+                          "Local Read Blocks": 0,
+                          "Local Dirtied Blocks": 0,
+                          "Local Written Blocks": 0,
+                          "Temp Read Blocks": 0,
+                          "Temp Written Blocks": 0,
+                          "Workers": [],
+                          "Plans": [
+                            {
+                              "Node Type": "Seq Scan",
+                              "Parent Relationship": "Outer",
+                              "Parallel Aware": true,
+                              "Async Capable": false,
+                              "Relation Name": "attendance",
+                              "Alias": "a",
+                              "Startup Cost": 0.0,
+                              "Total Cost": 14703.33,
+                              "Plan Rows": 10,
+                              "Plan Width": 4,
+                              "Actual Startup Time": 0.213,
+                              "Actual Total Time": 195.864,
+                              "Actual Rows": 124302,
+                              "Actual Loops": 3,
+                              "Filter": "((lower(status) = 'present'::text) AND (EXTRACT(year FROM class_date) = '2024'::numeric))",
+                              "Rows Removed by Filter": 209031,
+                              "Shared Hit Blocks": 6370,
+                              "Shared Read Blocks": 0,
+                              "Shared Dirtied Blocks": 0,
+                              "Shared Written Blocks": 0,
+                              "Local Hit Blocks": 0,
+                              "Local Read Blocks": 0,
+                              "Local Dirtied Blocks": 0,
+                              "Local Written Blocks": 0,
+                              "Temp Read Blocks": 0,
+                              "Temp Written Blocks": 0,
+                              "Workers": []
+                            },
+                            {
+                              "Node Type": "Index Scan",
+                              "Parent Relationship": "Inner",
+                              "Parallel Aware": false,
+                              "Async Capable": false,
+                              "Scan Direction": "Forward",
+                              "Index Name": "enrollments_pkey",
+                              "Relation Name": "enrollments",
+                              "Alias": "e",
+                              "Startup Cost": 0.42,
+                              "Total Cost": 8.44,
+                              "Plan Rows": 1,
+                              "Plan Width": 8,
+                              "Actual Startup Time": 0.003,
+                              "Actual Total Time": 0.003,
+                              "Actual Rows": 1,
+                              "Actual Loops": 372907,
+                              "Index Cond": "(id = a.enrollment_id)",
+                              "Rows Removed by Index Recheck": 0,
+                              "Shared Hit Blocks": 1491630,
+                              "Shared Read Blocks": 0,
+                              "Shared Dirtied Blocks": 0,
+                              "Shared Written Blocks": 0,
+                              "Local Hit Blocks": 0,
+                              "Local Read Blocks": 0,
+                              "Local Dirtied Blocks": 0,
+                              "Local Written Blocks": 0,
+                              "Temp Read Blocks": 0,
+                              "Temp Written Blocks": 0,
+                              "Workers": []
+                            }
+                          ]
+                        },
+                        {
+                          "Node Type": "Index Scan",
+                          "Parent Relationship": "Inner",
+                          "Parallel Aware": false,
+                          "Async Capable": false,
+                          "Scan Direction": "Forward",
+                          "Index Name": "students_pkey",
+                          "Relation Name": "students",
+                          "Alias": "s",
+                          "Startup Cost": 0.29,
+                          "Total Cost": 0.32,
+                          "Plan Rows": 1,
+                          "Plan Width": 12,
+                          "Actual Startup Time": 0.002,
+                          "Actual Total Time": 0.002,
+                          "Actual Rows": 1,
+                          "Actual Loops": 372907,
+                          "Index Cond": "(id = e.student_id)",
+                          "Rows Removed by Index Recheck": 0,
+                          "Shared Hit Blocks": 1118723,
+                          "Shared Read Blocks": 0,
+                          "Shared Dirtied Blocks": 0,
+                          "Shared Written Blocks": 0,
+                          "Local Hit Blocks": 0,
+                          "Local Read Blocks": 0,
+                          "Local Dirtied Blocks": 0,
+                          "Local Written Blocks": 0,
+                          "Temp Read Blocks": 0,
+                          "Temp Written Blocks": 0,
+                          "Workers": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "Planning": {
+      "Shared Hit Blocks": 289,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 2.715,
+    "Triggers": [],
+    "Execution Time": 974.525
+  },
+  "catalog": {
+    "students": {
+      "rows": 50000,
+      "columns": [
+        "id",
+        "first_name",
+        "last_name",
+        "email",
+        "birth_date",
+        "enrolled_on",
+        "status"
+      ],
+      "indexes": [
+        {
+          "name": "students_email_idx",
+          "columns": [
+            "email"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_email_idx ON public.students USING btree (email)"
+        },
+        {
+          "name": "students_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_pkey ON public.students USING btree (id)"
+        }
+      ]
+    },
+    "enrollments": {
+      "rows": 300000,
+      "columns": [
+        "id",
+        "student_id",
+        "course_id",
+        "term",
+        "enrolled_at"
+      ],
+      "indexes": [
+        {
+          "name": "enrollments_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX enrollments_pkey ON public.enrollments USING btree (id)"
+        },
+        {
+          "name": "enrollments_student_id_idx",
+          "columns": [
+            "student_id"
+          ],
+          "definition": "CREATE INDEX enrollments_student_id_idx ON public.enrollments USING btree (student_id)"
+        }
+      ]
+    },
+    "attendance": {
+      "rows": 1000000,
+      "columns": [
+        "id",
+        "enrollment_id",
+        "class_date",
+        "status"
+      ],
+      "indexes": [
+        {
+          "name": "attendance_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX attendance_pkey ON public.attendance USING btree (id)"
+        }
+      ]
+    }
+  }
+}

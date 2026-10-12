@@ -1,0 +1,34 @@
+Finalize GroupAggregate  (cost=15791.09..15791.95 rows=3 width=16) (actual time=816.242..818.238 rows=3 loops=1)
+  Group Key: s.status
+  Buffers: shared hit=2616739
+  ->  Gather Merge  (cost=15791.09..15791.89 rows=6 width=16) (actual time=814.316..818.234 rows=9 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        Buffers: shared hit=2616739
+        ->  Partial GroupAggregate  (cost=14791.07..14791.17 rows=3 width=16) (actual time=806.728..810.496 rows=3 loops=3)
+              Group Key: s.status
+              Buffers: shared hit=2616739
+              ->  Sort  (cost=14791.07..14791.09 rows=10 width=8) (actual time=795.220..800.911 rows=124302 loops=3)
+                    Sort Key: s.status
+                    Sort Method: quicksort  Memory: 3073kB
+                    Buffers: shared hit=2616739
+                    Worker 0:  Sort Method: quicksort  Memory: 4096kB
+                    Worker 1:  Sort Method: quicksort  Memory: 3073kB
+                    ->  Nested Loop  (cost=0.71..14790.90 rows=10 width=8) (actual time=0.048..777.846 rows=124302 loops=3)
+                          Buffers: shared hit=2616723
+                          ->  Nested Loop  (cost=0.42..14787.73 rows=10 width=4) (actual time=0.038..531.792 rows=124302 loops=3)
+                                Buffers: shared hit=1498000
+                                ->  Parallel Seq Scan on attendance a  (cost=0.00..14703.33 rows=10 width=4) (actual time=0.025..153.021 rows=124302 loops=3)
+                                      Filter: ((lower(status) = 'present'::text) AND (EXTRACT(year FROM class_date) = '2024'::numeric))
+                                      Rows Removed by Filter: 209031
+                                      Buffers: shared hit=6370
+                                ->  Index Scan using enrollments_pkey on enrollments e  (cost=0.42..8.44 rows=1 width=8) (actual time=0.003..0.003 rows=1 loops=372907)
+                                      Index Cond: (id = a.enrollment_id)
+                                      Buffers: shared hit=1491630
+                          ->  Index Scan using students_pkey on students s  (cost=0.29..0.32 rows=1 width=12) (actual time=0.002..0.002 rows=1 loops=372907)
+                                Index Cond: (id = e.student_id)
+                                Buffers: shared hit=1118723
+Planning:
+  Buffers: shared hit=22
+Planning Time: 0.179 ms
+Execution Time: 818.271 ms

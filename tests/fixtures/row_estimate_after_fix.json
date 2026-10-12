@@ -1,0 +1,453 @@
+{
+  "plan": {
+    "Plan": {
+      "Node Type": "Aggregate",
+      "Strategy": "Sorted",
+      "Partial Mode": "Finalize",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 25144.48,
+      "Total Cost": 25145.24,
+      "Plan Rows": 3,
+      "Plan Width": 16,
+      "Actual Startup Time": 387.544,
+      "Actual Total Time": 392.432,
+      "Actual Rows": 3,
+      "Actual Loops": 1,
+      "Group Key": [
+        "s.status"
+      ],
+      "Shared Hit Blocks": 10240,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Gather Merge",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 25144.48,
+          "Total Cost": 25145.18,
+          "Plan Rows": 6,
+          "Plan Width": 16,
+          "Actual Startup Time": 387.54,
+          "Actual Total Time": 392.427,
+          "Actual Rows": 9,
+          "Actual Loops": 1,
+          "Workers Planned": 2,
+          "Workers Launched": 2,
+          "Shared Hit Blocks": 10240,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Sort",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 24144.46,
+              "Total Cost": 24144.46,
+              "Plan Rows": 3,
+              "Plan Width": 16,
+              "Actual Startup Time": 385.479,
+              "Actual Total Time": 385.481,
+              "Actual Rows": 3,
+              "Actual Loops": 3,
+              "Sort Key": [
+                "s.status"
+              ],
+              "Sort Method": "quicksort",
+              "Sort Space Used": 25,
+              "Sort Space Type": "Memory",
+              "Shared Hit Blocks": 10240,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0,
+              "Workers": [
+                {
+                  "Worker Number": 0,
+                  "Sort Method": "quicksort",
+                  "Sort Space Used": 25,
+                  "Sort Space Type": "Memory"
+                },
+                {
+                  "Worker Number": 1,
+                  "Sort Method": "quicksort",
+                  "Sort Space Used": 25,
+                  "Sort Space Type": "Memory"
+                }
+              ],
+              "Plans": [
+                {
+                  "Node Type": "Aggregate",
+                  "Strategy": "Hashed",
+                  "Partial Mode": "Partial",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Startup Cost": 24144.4,
+                  "Total Cost": 24144.43,
+                  "Plan Rows": 3,
+                  "Plan Width": 16,
+                  "Actual Startup Time": 385.465,
+                  "Actual Total Time": 385.468,
+                  "Actual Rows": 3,
+                  "Actual Loops": 3,
+                  "Group Key": [
+                    "s.status"
+                  ],
+                  "Planned Partitions": 0,
+                  "HashAgg Batches": 1,
+                  "Peak Memory Usage": 24,
+                  "Disk Usage": 0,
+                  "Shared Hit Blocks": 10224,
+                  "Shared Read Blocks": 0,
+                  "Shared Dirtied Blocks": 0,
+                  "Shared Written Blocks": 0,
+                  "Local Hit Blocks": 0,
+                  "Local Read Blocks": 0,
+                  "Local Dirtied Blocks": 0,
+                  "Local Written Blocks": 0,
+                  "Temp Read Blocks": 0,
+                  "Temp Written Blocks": 0,
+                  "Workers": [
+                    {
+                      "Worker Number": 0,
+                      "HashAgg Batches": 1,
+                      "Peak Memory Usage": 24,
+                      "Disk Usage": 0
+                    },
+                    {
+                      "Worker Number": 1,
+                      "HashAgg Batches": 1,
+                      "Peak Memory Usage": 24,
+                      "Disk Usage": 0
+                    }
+                  ],
+                  "Plans": [
+                    {
+                      "Node Type": "Hash Join",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Join Type": "Inner",
+                      "Startup Cost": 7841.59,
+                      "Total Cost": 23364.19,
+                      "Plan Rows": 156042,
+                      "Plan Width": 8,
+                      "Actual Startup Time": 51.3,
+                      "Actual Total Time": 362.222,
+                      "Actual Rows": 124302,
+                      "Actual Loops": 3,
+                      "Inner Unique": true,
+                      "Hash Cond": "(e.student_id = s.id)",
+                      "Shared Hit Blocks": 10224,
+                      "Shared Read Blocks": 0,
+                      "Shared Dirtied Blocks": 0,
+                      "Shared Written Blocks": 0,
+                      "Local Hit Blocks": 0,
+                      "Local Read Blocks": 0,
+                      "Local Dirtied Blocks": 0,
+                      "Local Written Blocks": 0,
+                      "Temp Read Blocks": 0,
+                      "Temp Written Blocks": 0,
+                      "Workers": [],
+                      "Plans": [
+                        {
+                          "Node Type": "Hash Join",
+                          "Parent Relationship": "Outer",
+                          "Parallel Aware": true,
+                          "Async Capable": false,
+                          "Join Type": "Inner",
+                          "Startup Cost": 6176.59,
+                          "Total Cost": 21289.55,
+                          "Plan Rows": 156042,
+                          "Plan Width": 4,
+                          "Actual Startup Time": 35.94,
+                          "Actual Total Time": 294.102,
+                          "Actual Rows": 124302,
+                          "Actual Loops": 3,
+                          "Inner Unique": true,
+                          "Hash Cond": "(a.enrollment_id = e.id)",
+                          "Shared Hit Blocks": 8576,
+                          "Shared Read Blocks": 0,
+                          "Shared Dirtied Blocks": 0,
+                          "Shared Written Blocks": 0,
+                          "Local Hit Blocks": 0,
+                          "Local Read Blocks": 0,
+                          "Local Dirtied Blocks": 0,
+                          "Local Written Blocks": 0,
+                          "Temp Read Blocks": 0,
+                          "Temp Written Blocks": 0,
+                          "Workers": [],
+                          "Plans": [
+                            {
+                              "Node Type": "Seq Scan",
+                              "Parent Relationship": "Outer",
+                              "Parallel Aware": true,
+                              "Async Capable": false,
+                              "Relation Name": "attendance",
+                              "Alias": "a",
+                              "Startup Cost": 0.0,
+                              "Total Cost": 14703.33,
+                              "Plan Rows": 156042,
+                              "Plan Width": 4,
+                              "Actual Startup Time": 0.049,
+                              "Actual Total Time": 174.92,
+                              "Actual Rows": 124302,
+                              "Actual Loops": 3,
+                              "Filter": "((lower(status) = 'present'::text) AND (EXTRACT(year FROM class_date) = '2024'::numeric))",
+                              "Rows Removed by Filter": 209031,
+                              "Shared Hit Blocks": 6370,
+                              "Shared Read Blocks": 0,
+                              "Shared Dirtied Blocks": 0,
+                              "Shared Written Blocks": 0,
+                              "Local Hit Blocks": 0,
+                              "Local Read Blocks": 0,
+                              "Local Dirtied Blocks": 0,
+                              "Local Written Blocks": 0,
+                              "Temp Read Blocks": 0,
+                              "Temp Written Blocks": 0,
+                              "Workers": []
+                            },
+                            {
+                              "Node Type": "Hash",
+                              "Parent Relationship": "Inner",
+                              "Parallel Aware": true,
+                              "Async Capable": false,
+                              "Startup Cost": 3970.71,
+                              "Total Cost": 3970.71,
+                              "Plan Rows": 176471,
+                              "Plan Width": 8,
+                              "Actual Startup Time": 34.866,
+                              "Actual Total Time": 34.866,
+                              "Actual Rows": 100000,
+                              "Actual Loops": 3,
+                              "Hash Buckets": 524288,
+                              "Original Hash Buckets": 524288,
+                              "Hash Batches": 1,
+                              "Original Hash Batches": 1,
+                              "Peak Memory Usage": 15872,
+                              "Shared Hit Blocks": 2206,
+                              "Shared Read Blocks": 0,
+                              "Shared Dirtied Blocks": 0,
+                              "Shared Written Blocks": 0,
+                              "Local Hit Blocks": 0,
+                              "Local Read Blocks": 0,
+                              "Local Dirtied Blocks": 0,
+                              "Local Written Blocks": 0,
+                              "Temp Read Blocks": 0,
+                              "Temp Written Blocks": 0,
+                              "Workers": [],
+                              "Plans": [
+                                {
+                                  "Node Type": "Seq Scan",
+                                  "Parent Relationship": "Outer",
+                                  "Parallel Aware": true,
+                                  "Async Capable": false,
+                                  "Relation Name": "enrollments",
+                                  "Alias": "e",
+                                  "Startup Cost": 0.0,
+                                  "Total Cost": 3970.71,
+                                  "Plan Rows": 176471,
+                                  "Plan Width": 8,
+                                  "Actual Startup Time": 0.005,
+                                  "Actual Total Time": 9.353,
+                                  "Actual Rows": 100000,
+                                  "Actual Loops": 3,
+                                  "Shared Hit Blocks": 2206,
+                                  "Shared Read Blocks": 0,
+                                  "Shared Dirtied Blocks": 0,
+                                  "Shared Written Blocks": 0,
+                                  "Local Hit Blocks": 0,
+                                  "Local Read Blocks": 0,
+                                  "Local Dirtied Blocks": 0,
+                                  "Local Written Blocks": 0,
+                                  "Temp Read Blocks": 0,
+                                  "Temp Written Blocks": 0,
+                                  "Workers": []
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "Node Type": "Hash",
+                          "Parent Relationship": "Inner",
+                          "Parallel Aware": false,
+                          "Async Capable": false,
+                          "Startup Cost": 1040.0,
+                          "Total Cost": 1040.0,
+                          "Plan Rows": 50000,
+                          "Plan Width": 12,
+                          "Actual Startup Time": 14.615,
+                          "Actual Total Time": 14.615,
+                          "Actual Rows": 50000,
+                          "Actual Loops": 3,
+                          "Hash Buckets": 65536,
+                          "Original Hash Buckets": 65536,
+                          "Hash Batches": 1,
+                          "Original Hash Batches": 1,
+                          "Peak Memory Usage": 2726,
+                          "Shared Hit Blocks": 1620,
+                          "Shared Read Blocks": 0,
+                          "Shared Dirtied Blocks": 0,
+                          "Shared Written Blocks": 0,
+                          "Local Hit Blocks": 0,
+                          "Local Read Blocks": 0,
+                          "Local Dirtied Blocks": 0,
+                          "Local Written Blocks": 0,
+                          "Temp Read Blocks": 0,
+                          "Temp Written Blocks": 0,
+                          "Workers": [],
+                          "Plans": [
+                            {
+                              "Node Type": "Seq Scan",
+                              "Parent Relationship": "Outer",
+                              "Parallel Aware": false,
+                              "Async Capable": false,
+                              "Relation Name": "students",
+                              "Alias": "s",
+                              "Startup Cost": 0.0,
+                              "Total Cost": 1040.0,
+                              "Plan Rows": 50000,
+                              "Plan Width": 12,
+                              "Actual Startup Time": 0.013,
+                              "Actual Total Time": 6.325,
+                              "Actual Rows": 50000,
+                              "Actual Loops": 3,
+                              "Shared Hit Blocks": 1620,
+                              "Shared Read Blocks": 0,
+                              "Shared Dirtied Blocks": 0,
+                              "Shared Written Blocks": 0,
+                              "Local Hit Blocks": 0,
+                              "Local Read Blocks": 0,
+                              "Local Dirtied Blocks": 0,
+                              "Local Written Blocks": 0,
+                              "Temp Read Blocks": 0,
+                              "Temp Written Blocks": 0,
+                              "Workers": []
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "Planning": {
+      "Shared Hit Blocks": 35,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.224,
+    "Triggers": [],
+    "Execution Time": 392.481
+  },
+  "catalog": {
+    "students": {
+      "rows": 50000,
+      "columns": [
+        "id",
+        "first_name",
+        "last_name",
+        "email",
+        "birth_date",
+        "enrolled_on",
+        "status"
+      ],
+      "indexes": [
+        {
+          "name": "students_email_idx",
+          "columns": [
+            "email"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_email_idx ON public.students USING btree (email)"
+        },
+        {
+          "name": "students_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX students_pkey ON public.students USING btree (id)"
+        }
+      ]
+    },
+    "enrollments": {
+      "rows": 300000,
+      "columns": [
+        "id",
+        "student_id",
+        "course_id",
+        "term",
+        "enrolled_at"
+      ],
+      "indexes": [
+        {
+          "name": "enrollments_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX enrollments_pkey ON public.enrollments USING btree (id)"
+        },
+        {
+          "name": "enrollments_student_id_idx",
+          "columns": [
+            "student_id"
+          ],
+          "definition": "CREATE INDEX enrollments_student_id_idx ON public.enrollments USING btree (student_id)"
+        }
+      ]
+    },
+    "attendance": {
+      "rows": 1000000,
+      "columns": [
+        "id",
+        "enrollment_id",
+        "class_date",
+        "status"
+      ],
+      "indexes": [
+        {
+          "name": "attendance_pkey",
+          "columns": [
+            "id"
+          ],
+          "definition": "CREATE UNIQUE INDEX attendance_pkey ON public.attendance USING btree (id)"
+        }
+      ]
+    }
+  }
+}

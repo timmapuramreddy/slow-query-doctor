@@ -42,7 +42,7 @@ Both queries returned the same 803 row(s).
 - It checks both queries return the same rows, so a "fix" that changes the answer gets a warning.
 - Timings above are from a laptop (Apple M1 Pro, PostgreSQL 17 in Docker). Yours will differ.
 
-When the fix is an index, time it with `--setup`:
+When the fix is an index or statistics, time it with `--setup`:
 
 ```
 $ cd examples/01-missing-index
@@ -58,8 +58,8 @@ slow.sql + fix.sql is 56.4x faster (median 20.3 ms -> 0.36 ms).
 Both queries returned the same 3 row(s).
 ```
 
-- `--setup` times the slow query as it is. Then, inside one transaction, it runs the setup file, times the query again, and rolls everything back. The index never stays in your database.
-- The setup file may only contain `CREATE INDEX`, `CREATE EXTENSION` and `ANALYZE`. Anything else is refused.
+- `--setup` times the slow query as it is. Then, inside one transaction, it runs the setup file, times the query again, and rolls everything back. The index or statistics never stay in your database.
+- The setup file may only contain `CREATE INDEX`, `CREATE STATISTICS`, `CREATE EXTENSION` and `ANALYZE`. Anything else is refused.
 - The runs can't take turns here, because the index exists only inside that transaction. All runs without it come first. Speedups move between runs (40x to 56x for this example), so run it more than once.
 - While it runs, `CREATE INDEX` blocks writes to that table. It gives up if it waits more than 5 s for a lock. Use a test database, not a busy production one.
 - `sqd compare slow.sql fixed.sql --setup fix.sql` times a rewrite and an index together.
@@ -77,8 +77,9 @@ Both queries returned the same 3 row(s).
 | 7 | Index finds the rows, then a filter throws most of them away | done |
 | 8 | Subquery that runs once per row (`NOT IN (SELECT ...)`) | done |
 | 9 | `ORDER BY ... LIMIT` sorts every matching row to return a few | done |
+| 10 | PostgreSQL guessed far too few rows and picked a nested loop that ran many times | done |
 
-Each pattern has a slow query and its fix in [`examples/`](examples/). The fix is either a rewritten query (`fixed.sql`, time it with `sqd compare slow.sql fixed.sql`) or an index to add (`fix.sql`, time it with `sqd compare slow.sql --setup fix.sql`).
+Each pattern has a slow query and its fix in [`examples/`](examples/). The fix is either a rewritten query (`fixed.sql`, time it with `sqd compare slow.sql fixed.sql`) or an index or statistics to add (`fix.sql`, time it with `sqd compare slow.sql --setup fix.sql`).
 
 ## Try it
 
