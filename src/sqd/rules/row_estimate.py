@@ -56,14 +56,24 @@ def _ran(inner: PlanNode) -> PlanNode:
 
 def _source(outer: PlanNode) -> PlanNode | None:
     """The node where the bad guess starts: the first node, top down, that is off by
-    MIN_RATIO or more while none of its children is."""
-    for node in walk(outer.raw):
-        ratio = _ratio(node)
-        if ratio is None or ratio < MIN_RATIO:
-            continue
-        children = [node.child(raw) for raw in node.raw.get("Plans", [])]
-        if not any((_ratio(c) or 0) >= MIN_RATIO for c in children):
+    MIN_RATIO or more while none of the children feeding it rows is.
+
+    A SubPlan or InitPlan does not feed rows (a NOT IN list only removes them), so its own
+    guess is not followed.
+    """
+    stack = [outer]
+    while stack:
+        node = stack.pop()
+        children = [
+            node.child(raw)
+            for raw in node.raw.get("Plans", [])
+            if raw.get("Parent Relationship") not in ("SubPlan", "InitPlan")
+        ]
+        if (_ratio(node) or 0) >= MIN_RATIO and not any(
+            (_ratio(c) or 0) >= MIN_RATIO for c in children
+        ):
             return node
+        stack.extend(reversed(children))
     return None
 
 

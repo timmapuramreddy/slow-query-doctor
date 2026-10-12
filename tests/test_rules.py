@@ -1238,3 +1238,17 @@ def test_row_estimate_gives_no_exact_sql_for_a_cast_column():
     assert finding.suggestion.endswith(
         "CREATE STATISTICS on 8 or fewer of those columns, then ANALYZE attendance;"
     )
+
+
+def test_row_estimate_does_not_blame_a_subplan_that_only_removes_rows():
+    # Both guesses are off, but the NOT IN list on students only removes attendance rows.
+    subplan = {
+        **_scan("students", None, 10, 5_000),
+        "Parent Relationship": "SubPlan",
+        "Subplan Name": "SubPlan 1",
+    }
+    filter_ = "((status = 'late'::text) AND (class_date = '2024-03-04'::date) AND (NOT (ANY "
+    filter_ += "(id = (hashed SubPlan 1).col1))))"
+    outer = {**_scan("attendance", filter_, 1, 60_000), "Plans": [subplan]}
+    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), _attendance_catalog())
+    assert finding.title == "PostgreSQL expected 1 rows from attendance and got about 60,000"
