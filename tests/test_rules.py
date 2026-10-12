@@ -4,6 +4,7 @@ import pytest
 
 from sqd.catalog import Catalog
 from sqd.rules import run_rules
+from sqd.rules.row_estimate import _closes
 from sqd.rules.top_n_sort import _btree_keys
 
 
@@ -1154,14 +1155,32 @@ def test_row_estimate_names_a_join_as_the_source():
         "(app.clean(status) = 'x'::text)",  # the helpers drop the schema name
         "(EXTRACT(year FROM (class_date + '1 day'::interval)) = '2024'::numeric)",  # cut short
         "(replace(status, \"x)y\", ''::text) = ''::text)",  # cut at the ")" in "x)y"
+        # A ' inside the quoted name "a'b" must not hide the open quote of "x)y.
+        '(concat(status, "a\'b", \'q\'::text, "x)y") = status)',
     ],
 )
 def test_row_estimate_gives_no_exact_sql_for_an_expression_it_cannot_copy_whole(filter_):
     outer = _scan("attendance", filter_, 1, 60_000)
     catalog = Catalog.from_dict(
-        {"attendance": {"rows": 1_000_000, "columns": ["status", "class_date", "x)y"]}}
+        {"attendance": {"rows": 1_000_000, "columns": ["status", "class_date", "x)y", "a'b"]}}
     )
     [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), catalog)
     assert finding.suggestion.endswith(
         "CREATE STATISTICS on the expressions in the filter, then ANALYZE attendance;"
     )
+
+
+@pytest.mark.parametrize(
+    "expression, whole",
+    [
+        ("lower(status)", True),
+        ('lower("Status")', True),
+        ("replace(status, '(', ''::text)", True),  # brackets inside a string do not count
+        ('lower("a""b)c")', True),  # doubled quote inside a quoted name
+        ("EXTRACT(year FROM (class_date + '1 day'::interval)", False),
+        ('replace(status, "x)', False),
+        ("lower(status))", False),
+    ],
+)
+def test_row_estimate_closes_reads_strings_and_quoted_names(expression, whole):
+    assert _closes(expression) is whole

@@ -88,13 +88,35 @@ def _wrapped_expressions(filter_: str, columns: list[str]) -> list[str]:
     return [e for e in unique if not any(e != other and e in other for other in unique)]
 
 
+def _closes(expression: str) -> bool:
+    """True if every 'string' and "quoted name" closes and every bracket outside them closes.
+
+    Doubled quotes inside are escapes. Unlike mask_literals, a ' inside a quoted name such as
+    "a'b" does not start a string.
+    """
+    depth, quote, pos = 0, "", 0
+    while pos < len(expression):
+        char = expression[pos]
+        if quote:
+            if char == quote and expression.startswith(quote * 2, pos):
+                pos += 1
+            elif char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+        elif char in "()":
+            depth += 1 if char == "(" else -1
+            if depth < 0:
+                return False
+        pos += 1
+    return not quote and depth == 0
+
+
 def _is_whole(expression: str, filter_: str) -> bool:
-    """True if the expression can be copied into SQL as it is: its brackets balance and no
-    schema name comes before it in the filter (the helpers above read only the function's
-    own name, and EXTRACT only up to its first closing bracket)."""
-    masked = mask_literals(expression)
-    # An odd number of double quotes means a quoted name was cut, e.g. at a ")" inside it.
-    if masked.count("(") != masked.count(")") or masked.count('"') % 2:
+    """True if the expression can be copied into SQL as it is: nothing in it is cut short and
+    no schema name comes before it in the filter. The helpers above read only a function's own
+    name, and stop at the first ")" in EXTRACT or at one inside a quoted name such as "x)y"."""
+    if not _closes(expression):
         return False
     start = filter_.find(expression)
     while start >= 0:
