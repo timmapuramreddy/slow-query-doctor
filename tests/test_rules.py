@@ -1166,7 +1166,7 @@ def test_row_estimate_gives_no_exact_sql_for_an_expression_it_cannot_copy_whole(
     )
     [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), catalog)
     assert finding.suggestion.endswith(
-        "CREATE STATISTICS on the expressions in the filter, then ANALYZE attendance;"
+        "CREATE STATISTICS on up to 8 of the expressions in the filter, then ANALYZE attendance;"
     )
 
 
@@ -1193,3 +1193,39 @@ def test_row_estimate_ignores_function_like_text_inside_a_quoted_name():
     )
     [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), catalog)
     assert finding.suggestion.startswith("Run ANALYZE attendance; so PostgreSQL has current")
+
+
+def test_row_estimate_gives_no_exact_sql_for_more_than_eight_columns():
+    columns = [f"c{n}" for n in range(9)]
+    filter_ = "(" + " AND ".join(f"({c} = 1)" for c in columns) + ")"
+    catalog = Catalog.from_dict({"attendance": {"rows": 1_000_000, "columns": columns}})
+    [finding] = _row_estimate(
+        _nested_loop(_scan("attendance", filter_, 1, 60_000), _lookup(60_000)), catalog
+    )
+    assert finding.suggestion.endswith(
+        "CREATE STATISTICS on 8 or fewer of those columns, then ANALYZE attendance;"
+    )
+
+
+def test_row_estimate_gives_no_exact_sql_for_a_column_used_through_an_operator():
+    # Statistics on the json column payload itself would fail: json has no ordering.
+    filter_ = "(((payload ->> 'status'::text) = 'active'::text) AND (tenant_id = 42))"
+    catalog = Catalog.from_dict(
+        {"attendance": {"rows": 1_000_000, "columns": ["payload", "tenant_id"]}}
+    )
+    [finding] = _row_estimate(
+        _nested_loop(_scan("attendance", filter_, 1, 60_000), _lookup(60_000)), catalog
+    )
+    assert "CREATE STATISTICS attendance" not in finding.suggestion
+
+
+def test_row_estimate_reads_a_cast_column_as_compared_directly():
+    filter_ = "(((status)::text = 'late'::text) AND (class_date >= '2024-01-01'::date))"
+    [finding] = _row_estimate(
+        _nested_loop(_scan("attendance", filter_, 1, 60_000), _lookup(60_000)),
+        _attendance_catalog(),
+    )
+    assert finding.suggestion.endswith(
+        "CREATE STATISTICS attendance_status_class_date_stats ON status, class_date "
+        "FROM attendance; ANALYZE attendance;"
+    )

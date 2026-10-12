@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from sqd.catalog import Catalog
 from sqd.plan import (
     PlanNode,
@@ -22,6 +24,12 @@ RULE_ID = "bad-row-estimate"
 # runs cost about 50 ms extra; fewer is not worth a finding. Rows on disk cost far more.
 MIN_RATIO = 10
 MIN_RUNS = 50_000
+
+# PostgreSQL allows at most 8 columns and expressions in one statistics object.
+MAX_STATISTICS_ITEMS = 8
+
+# What follows a column compared directly, as EXPLAIN prints it: "status = ", "(email)::text <> ".
+_COMPARISON = re.compile(r"\)?(?:::[a-z ]+(?:\([0-9, ]*\))?)?\)?\s+(?:=|<>|<=|>=|<|>)\s")
 
 
 def _ratio(node: PlanNode) -> float | None:
@@ -141,6 +149,14 @@ def _starts(expression: str, filter_: str) -> list[int]:
     return found
 
 
+def _compared(column: str, filter_: str) -> bool:
+    """True if every use of the column in the filter compares it directly (=, <, >= ...), maybe
+    after a cast. Not for "payload ->> 'k'": statistics on a json column itself would fail."""
+    name = re.escape(quote_name(column))
+    uses = list(re.finditer(rf'(?<![\w$."]){name}(?![\w$"])', filter_))
+    return bool(uses) and all(_COMPARISON.match(filter_, use.end()) for use in uses)
+
+
 def _is_whole(expression: str, filter_: str) -> bool:
     """True if the expression can be copied into SQL as it is: nothing in it is cut short and
     no schema name comes before it in the filter. The helpers above read only a function's own
@@ -181,16 +197,29 @@ def _suggestion(source: PlanNode, catalog: Catalog) -> str:
             f"Run ANALYZE {name}; so PostgreSQL has current statistics, then check the plan "
             "again."
         )
+    exact = (
+        len(items) <= MAX_STATISTICS_ITEMS
+        and all(_is_whole(e, filter_) for e in expressions)
+        and all(_compared(c, filter_) for c in plain)
+    )
     stats = quote_name(f"{source.relation}_{'_'.join(columns)}_stats")
     create = f"CREATE STATISTICS {stats} ON {', '.join(items)} FROM {name}; ANALYZE {name};"
     if expressions:
-        if not all(_is_whole(e, filter_) for e in expressions):
-            create = f"CREATE STATISTICS on the expressions in the filter, then ANALYZE {name};"
+        if not exact:
+            create = (
+                f"CREATE STATISTICS on up to {MAX_STATISTICS_ITEMS} of the expressions in the "
+                f"filter, then ANALYZE {name};"
+            )
         return (
             f"PostgreSQL keeps statistics on columns, not on {' or '.join(expressions)}, so "
             "it guessed. Best: filter on the plain columns instead (for example a date range "
             "instead of a date function), so their statistics apply. If you can't change the "
             f"query, give PostgreSQL statistics on the expressions: {create}"
+        )
+    if not exact:
+        create = (
+            f"CREATE STATISTICS on {MAX_STATISTICS_ITEMS} or fewer of those columns, then "
+            f"ANALYZE {name};"
         )
     return (
         "PostgreSQL treats filters on different columns as unrelated and multiplies their "
