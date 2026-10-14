@@ -59,6 +59,12 @@ jobs:
       - name: Black
         run: black --check src tests
 
+      - name: Build package
+        run: |
+          pip install build twine
+          python -m build
+          twine check --strict dist/*
+
       - name: Load demo data
         run: time sqd demo load
 

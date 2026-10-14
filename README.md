@@ -81,6 +81,14 @@ Both queries returned the same 3 row(s).
 
 Each pattern has a slow query and its fix in [`examples/`](examples/). The fix is either a rewritten query (`fixed.sql`, time it with `sqd compare slow.sql fixed.sql`) or an index or statistics to add (`fix.sql`, time it with `sqd compare slow.sql --setup fix.sql`).
 
+## Install
+
+```
+pip install slow-query-doctor
+```
+
+Needs Python 3.11+. This gives you the `sqd` command. The examples and demo data live in the repo, so clone it to follow [Try it](#try-it).
+
 ## Try it
 
 Needs Python 3.11+ and Docker (or any PostgreSQL you can point it at).
@@ -113,7 +121,9 @@ You can check a slow query from your own database without giving anyone access t
 
    `-XqAt` makes psql print the raw JSON with no table borders.
 
-   Text output of `EXPLAIN (ANALYZE, BUFFERS)` also works, from plain `psql` or `psql -XqAt`. JSON is still the better choice: it holds every detail of the plan, and the text form leaves some out.
+   Text output of `EXPLAIN (ANALYZE, BUFFERS)` also works, from plain `psql` or `psql -XqAt`. JSON is still the safest format to share:
+   - It holds every detail of the plan. The text form leaves some out.
+   - Text output prints CTE names (`WITH name AS ...`) without quotes. A CTE name with a line break in it can make the text reader see plan lines that aren't there. JSON quotes every name, so this can't happen.
 
 2. Make the table info query and run it on the same database. It only reads `pg_catalog`: row estimates, column names and index definitions for the tables in the plan.
 
