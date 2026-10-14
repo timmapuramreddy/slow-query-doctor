@@ -16,6 +16,8 @@ EXPECTED = {
     "05-non-sargable-date": ["non-sargable-date-filter"],
     "06-join-missing-index": ["missing-index"],
     "07-filter-after-index": ["filter-after-index"],
+    "08-not-in-subquery": ["subquery-per-row"],
+    "09-sort-for-limit": ["top-n-sort"],
     "10-bad-row-estimate": ["bad-row-estimate"],
 }
 

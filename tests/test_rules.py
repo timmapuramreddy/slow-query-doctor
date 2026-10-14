@@ -3,6 +3,7 @@ from dataclasses import replace
 import pytest
 
 from sqd.catalog import Catalog
+from sqd.plan import quote_name
 from sqd.rules import run_rules
 from sqd.rules.row_estimate import _closes
 from sqd.rules.top_n_sort import _btree_keys
@@ -701,6 +702,46 @@ def test_date_filter_reads_and_quotes_mixed_case_column():
     assert findings[0].suggestion.endswith('CREATE INDEX ON "Orders" ("PlacedAt");')
 
 
+def _odd_names_catalog(columns: list[str]) -> Catalog:
+    """Columns whose quoted names hold a ' or a bracket, each with its own index."""
+    indexes = [
+        {"name": f"i{n}", "columns": [c], "definition": "(c)"} for n, c in enumerate(columns)
+    ]
+    return Catalog.from_dict(
+        {"students": {"rows": 1_000_000, "columns": ["id", *columns], "indexes": indexes}}
+    )
+
+
+@pytest.mark.parametrize("column", ["it's", "a)b"])
+def test_function_on_column_reads_quote_and_bracket_inside_quoted_name(column):
+    quoted = quote_name(column)
+    plan = _seq_scan(f"(lower({quoted}) = 'a'::text)")
+    findings = run_rules(plan, _odd_names_catalog([column]))
+    assert [f.title for f in findings] == [f"lower() hides the index on students.{column}"]
+    assert findings[0].suggestion.endswith(f"CREATE INDEX ON students (lower({quoted}));")
+
+
+def test_function_on_column_ignores_call_like_text_inside_quoted_name():
+    plan = _seq_scan("(\"lower(x)\" = 'a'::text)")
+    assert run_rules(plan, _odd_names_catalog(["x", "lower(x)"])) == []
+
+
+@pytest.mark.parametrize(
+    "filter_",
+    [
+        "((\"it's day\")::date = '2024-01-01'::date)",
+        "(date_trunc('day'::text, \"it's day\") = '2024-01-01 00:00:00'::timestamp)",
+        "(date_trunc('day'::text, \"a)b day\") = '2024-01-01 00:00:00'::timestamp)",
+        "(EXTRACT(year FROM \"a)b day\") = '1990'::numeric)",
+    ],
+)
+def test_date_filter_reads_quote_and_bracket_inside_quoted_name(filter_):
+    catalog = _odd_names_catalog(["it's day", "a)b day"])
+    assert [f.rule_id for f in run_rules(_seq_scan(filter_), catalog)] == [
+        "non-sargable-date-filter"
+    ]
+
+
 # Rule 8: subquery run once per row
 
 
@@ -1154,10 +1195,6 @@ def test_row_estimate_names_a_join_as_the_source():
     "filter_",
     [
         "(app.clean(status) = 'x'::text)",  # the helpers drop the schema name
-        "(EXTRACT(year FROM (class_date + '1 day'::interval)) = '2024'::numeric)",  # cut short
-        "(replace(status, \"x)y\", ''::text) = ''::text)",  # cut at the ")" in "x)y"
-        # A ' inside the quoted name "a'b" must not hide the open quote of "x)y.
-        '(concat(status, "a\'b", \'q\'::text, "x)y") = status)',
         # The cast to text would be dropped, leaving statistics on a json result.
         "((json_extract_path(payload, VARIADIC '{s}'::text[]))::text = 'x'::text)",
     ],
@@ -1176,6 +1213,31 @@ def test_row_estimate_gives_no_exact_sql_for_an_expression_it_cannot_copy_whole(
     assert finding.suggestion.endswith(
         "CREATE STATISTICS on up to 8 of the expressions in the filter, then ANALYZE attendance;"
     )
+
+
+@pytest.mark.parametrize(
+    "filter_, expression",
+    [
+        (
+            "(EXTRACT(year FROM (class_date + '1 day'::interval)) = '2024'::numeric)",
+            "EXTRACT(year FROM (class_date + '1 day'::interval))",
+        ),
+        ("(replace(status, \"x)y\", ''::text) = ''::text)", "replace(status, \"x)y\", ''::text)"),
+        (
+            '(concat(status, "a\'b", \'q\'::text, "x)y") = status)',
+            'concat(status, "a\'b", \'q\'::text, "x)y")',
+        ),
+    ],
+)
+def test_row_estimate_gives_exact_sql_for_brackets_and_quotes_inside_an_expression(
+    filter_, expression
+):
+    outer = _scan("attendance", filter_, 1, 60_000)
+    catalog = Catalog.from_dict(
+        {"attendance": {"rows": 1_000_000, "columns": ["status", "class_date", "x)y", "a'b"]}}
+    )
+    [finding] = _row_estimate(_nested_loop(outer, _lookup(60_000)), catalog)
+    assert finding.suggestion.endswith(f"ON ({expression}) FROM attendance; ANALYZE attendance;")
 
 
 @pytest.mark.parametrize(
