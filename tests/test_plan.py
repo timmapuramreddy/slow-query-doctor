@@ -130,6 +130,52 @@ def test_date_wrapped_columns_reads_at_time_zone_cast():
     ]
 
 
+def test_referenced_columns_reads_a_quote_inside_a_quoted_name():
+    expr = "((\"it's\" = 'x'::text) AND (id > 1))"
+    assert referenced_columns(expr, ["it's", "id"]) == ["it's", "id"]
+
+
+def test_function_calls_skip_brackets_and_quotes_inside_quoted_names():
+    assert function_calls("(lower(\"it's\") = 'a'::text)") == [("lower", '"it\'s"')]
+    assert function_calls("(lower(\"a)b\") = 'a'::text)") == [("lower", '"a)b"')]
+    assert function_calls("(\"lower(x)\" = 'a'::text)") == []
+
+
+def test_date_wrapped_columns_reads_quote_and_bracket_inside_quoted_names():
+    cols = ["it's day", "a)b day"]
+    cases = [
+        (
+            "((\"it's day\")::date = '2024-01-01'::date)",
+            ("it's day", "::date", '("it\'s day")::date'),
+        ),
+        (
+            "(date_trunc('day'::text, \"it's day\") = '2024-01-01 00:00:00'::timestamp)",
+            ("it's day", "date_trunc()", "date_trunc('day'::text, \"it's day\")"),
+        ),
+        (
+            "(date_trunc('day'::text, \"a)b day\") = '2024-01-01 00:00:00'::timestamp)",
+            ("a)b day", "date_trunc()", "date_trunc('day'::text, \"a)b day\")"),
+        ),
+        (
+            "(EXTRACT(year FROM \"a)b day\") = '1990'::numeric)",
+            ("a)b day", "EXTRACT()", 'EXTRACT(year FROM "a)b day")'),
+        ),
+    ]
+    for expr, found in cases:
+        assert date_wrapped_columns(expr, cols) == [found], expr
+
+
+def test_date_wrapped_columns_reads_extract_with_brackets_inside():
+    expr = "(EXTRACT(year FROM (due_at + '1 day'::interval)) = '2024'::numeric)"
+    assert date_wrapped_columns(expr, ["due_at"]) == [
+        ("due_at", "EXTRACT()", "EXTRACT(year FROM (due_at + '1 day'::interval))")
+    ]
+
+
+def test_date_wrapped_columns_skips_a_cast_inside_a_quoted_name():
+    assert date_wrapped_columns("(\"x (due_at)::date z\" = 'a'::text)", ["due_at"]) == []
+
+
 def test_quote_name_matches_postgres_quote_ident():
     assert [quote_name(n) for n in ["name", "order", "UserId", "time", 'a"b']] == [
         "name",

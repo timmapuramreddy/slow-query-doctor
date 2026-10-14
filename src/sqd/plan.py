@@ -10,7 +10,8 @@ from typing import Any
 
 from sqd.plan_text import parse_text_explain
 
-_STRING = re.compile(r"'(?:[^']|'')*'")
+# A "quoted name" or a 'string', read left to right so a ' inside "it's" starts no string.
+_QUOTED = re.compile(r"\"(?:[^\"]|\"\")*\"|'(?:[^']|'')*'")
 # A plain lowercase name, or a quoted one such as "UserId" ("" inside is a literal quote).
 _NAME = r'(?:[a-z_][a-z0-9_$]*|"(?:[^"]|"")+")'
 # A name that is not a function call.
@@ -246,14 +247,28 @@ def _raw_nodes(root: object) -> Iterator[object]:
             stack.extend(node["Plans"])
 
 
+def _blank(match: re.Match[str]) -> str:
+    """The quoted text with its inside replaced by spaces, so positions stay the same."""
+    text = match.group()
+    return text[0] + " " * (len(text) - 2) + text[-1]
+
+
 def strip_literals(expression: str) -> str:
     """Replace quoted strings with '' so their contents are not read as column names."""
-    return _STRING.sub("''", expression)
+    return _QUOTED.sub(lambda m: m.group() if m.group()[0] == '"' else "''", expression)
 
 
 def mask_literals(expression: str) -> str:
     """Blank out the inside of quoted strings, keeping every character position the same."""
-    return _STRING.sub(lambda m: "'" + " " * (len(m.group()) - 2) + "'", expression)
+    return _QUOTED.sub(lambda m: m.group() if m.group()[0] == '"' else _blank(m), expression)
+
+
+def mask_quoted(expression: str) -> str:
+    """Blank out the inside of quoted strings and quoted names, keeping every position.
+
+    For finding calls and brackets: '("lower(x)" = lower("a)b"))' -> '("        " = lower("   "))'.
+    """
+    return _QUOTED.sub(_blank, expression)
 
 
 def unquote(name: str) -> str:
@@ -346,20 +361,24 @@ def function_calls(expression: str) -> list[tuple[str, str]]:
     Example: "(lower((email)::text) = ''::text)" -> [("lower", "(email)::text")].
     String arguments are kept: "date_trunc('day'::text, x)" -> [("date_trunc", "'day'::text, x")].
     """
-    text = mask_literals(expression)
-    calls: list[tuple[str, str]] = []
-    for match in _CALL.finditer(text):
-        start = match.end()
-        depth = 1
-        pos = start
-        while pos < len(text) and depth:
-            if text[pos] == "(":
-                depth += 1
-            elif text[pos] == ")":
-                depth -= 1
-            pos += 1
-        calls.append((match.group(1), expression[start : pos - 1]))
-    return calls
+    text = mask_quoted(expression)
+    return [
+        (match.group(1), expression[match.end() : _closing(text, match.end()) - 1])
+        for match in _CALL.finditer(text)
+    ]
+
+
+def _closing(text: str, start: int) -> int:
+    """The position just after the ")" that closes a "(" ending at start (text is masked)."""
+    depth = 1
+    pos = start
+    while pos < len(text) and depth:
+        if text[pos] == "(":
+            depth += 1
+        elif text[pos] == ")":
+            depth -= 1
+        pos += 1
+    return pos
 
 
 # Column (optionally cast) followed by LIKE (~~) or ILIKE (~~*) and a pattern starting with % or _.
@@ -384,7 +403,7 @@ def leading_wildcard_columns(expression: str, columns: list[str]) -> list[tuple[
 # Date functions that hide a date/time column from its index. Shared by rules 2 and 5.
 DATE_FUNCTIONS = frozenset({"date_trunc", "date_part", "date"})
 
-_EXTRACT = re.compile(r"\bextract\(\s*\w+\s+from\s+([^)]*)\)", re.I)
+_EXTRACT = re.compile(r"\bextract\(\s*\w+\s+from\s+", re.I)
 _DATE_TYPE = r"::(date|timestamp(?: with(?:out)? time zone)?)\b"
 _DATE_CASTS = (
     # (graded_at)::date
@@ -401,19 +420,25 @@ def date_wrapped_columns(expression: str, columns: list[str]) -> list[tuple[str,
     Example: "((graded_at)::date = '2024-03-15'::date)"
     -> [("graded_at", "::date", "(graded_at)::date")].
     """
+    # Casts are read with quoted names kept, so ("Order Date")::date matches. A match that
+    # starts on a blanked character lies inside a quoted name and is skipped.
     text = mask_literals(expression)
+    hidden = mask_quoted(expression)
     found: list[tuple[str, str, str]] = []
     for func, args in function_calls(expression):
         if func in DATE_FUNCTIONS:
             found += [
                 (col, f"{func}()", f"{func}({args})") for col in referenced_columns(args, columns)
             ]
-    for match in _EXTRACT.finditer(text):
+    for match in _EXTRACT.finditer(hidden):
+        end = _closing(hidden, match.start() + len("extract("))
         found += [
-            (col, "EXTRACT()", expression[match.start() : match.end()])
-            for col in referenced_columns(match.group(1), columns)
+            (col, "EXTRACT()", expression[match.start() : end])
+            for col in referenced_columns(expression[match.end() : end - 1], columns)
         ]
     for match in (m for pattern in _DATE_CASTS for m in pattern.finditer(text)):
+        if hidden[match.start()] != text[match.start()]:
+            continue
         if unquote(match.group(1)) in columns:
             found.append(
                 (

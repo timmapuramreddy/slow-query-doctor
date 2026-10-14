@@ -109,8 +109,8 @@ def _wrapped_expressions(filter_: str, columns: list[str]) -> list[str]:
 def _outside_quotes(text: str) -> list[bool] | None:
     """For each character, True if it is outside every 'string' and "quoted name".
 
-    None if one does not close. Doubled quotes inside are escapes. Unlike mask_literals, a '
-    inside a quoted name such as "a'b" does not start a string.
+    None if one does not close, which mask_quoted cannot tell. Doubled quotes inside are
+    escapes, and a ' inside a quoted name such as "a'b" does not start a string.
     """
     outside: list[bool] = []
     quote, pos = "", 0
@@ -147,8 +147,8 @@ def _closes(expression: str) -> bool:
 
 
 def _starts(expression: str, filter_: str) -> list[int]:
-    """Where the expression appears in the filter outside quotes. The helpers above also find
-    function-like text inside a quoted name such as "a f(x) b"."""
+    """Where the expression appears in the filter outside quotes. A plain text search also
+    finds it inside a quoted name such as "a f(x) b"."""
     outside = _outside_quotes(filter_) or []
     found: list[int] = []
     start = filter_.find(expression)
@@ -174,9 +174,9 @@ def _is_whole(expression: str, filter_: str) -> bool:
     """True if the expression can be copied into SQL as it is: nothing in it is cut short, no
     schema name comes before it, and it is compared directly, as _compared asks of a column.
 
-    The helpers above read only a function's own name, and stop at the first ")" in EXTRACT or
-    at one inside a quoted name such as "x)y". A cast after the expression would be dropped,
-    and the uncast result may be a type statistics cannot be built on (json).
+    The helpers above read only a function's own name, and a date cast such as b)::date can be
+    cut out of (a + b)::date. A cast after the expression would be dropped, and the uncast
+    result may be a type statistics cannot be built on (json).
     """
     return _closes(expression) and all(
         not (start and (filter_[start - 1] in '."$_' or filter_[start - 1].isalnum()))
@@ -208,7 +208,7 @@ def _suggestion(source: PlanNode, catalog: Catalog) -> str:
     if any(mark in mask_literals(filter_) for mark in ("$", "SubPlan", "InitPlan")):
         filter_ = ""
     columns = referenced_columns(filter_, table.columns)
-    expressions = [e for e in _wrapped_expressions(filter_, table.columns) if _starts(e, filter_)]
+    expressions = _wrapped_expressions(filter_, table.columns)
     plain = [c for c in columns if not any(c in referenced_columns(e, [c]) for e in expressions)]
     items = [quote_name(c) for c in plain] + [f"({e})" for e in expressions]
     if not expressions and len(plain) < 2:
