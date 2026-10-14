@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from sqd.plan_text import parse_text_explain
@@ -36,13 +36,17 @@ class PlanNode:
     # Times the nearest Gather above re-ran its parallel plan (a nested loop can re-run it).
     # A parallel-aware node's loops are these runs times the processes in each run.
     rescans: int = 1
+    # Processes in each of those runs (leader and workers), which ran at the same time.
+    processes: int = 1
 
     def child(self, raw: dict[str, Any]) -> PlanNode:
-        """The node for one of this node's "Plans", carrying the Gather run count down."""
-        gather = self.node_type in ("Gather", "Gather Merge")
-        return PlanNode(
-            raw=raw, depth=self.depth + 1, rescans=self.loops if gather else self.rescans
-        )
+        """The node for one of this node's "Plans", carrying the Gather counts down."""
+        if self.node_type not in ("Gather", "Gather Merge"):
+            return PlanNode(
+                raw=raw, depth=self.depth + 1, rescans=self.rescans, processes=self.processes
+            )
+        node = PlanNode(raw=raw, depth=self.depth + 1, rescans=self.loops)
+        return replace(node, processes=max(node.loops // self.loops, 1))
 
     @property
     def node_type(self) -> str:
@@ -88,9 +92,16 @@ class PlanNode:
 
     @property
     def total_time_ms(self) -> float:
-        """Time spent in this node. Parallel workers run at the same time, so do not add them."""
+        """Time spent in this node, per process when it ran in parallel.
+
+        Below a Gather the leader and workers each run the node at the same time, so adding
+        their times could pass the query's own time; this is the average per process instead.
+        A parallel-aware node shares one run between them, so only the Gather's runs count.
+        """
         per_loop = float(self.raw.get("Actual Total Time", 0.0))
-        return per_loop if self.raw.get("Parallel Aware") else per_loop * self.loops
+        if self.raw.get("Parallel Aware"):
+            return per_loop * self.rescans
+        return per_loop * self.loops / self.processes
 
     def summary(self) -> str:
         """Short one-line label, e.g. 'Seq Scan on attendance (Filter: (enrollment_id = 42))'."""

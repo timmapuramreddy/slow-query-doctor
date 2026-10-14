@@ -1036,6 +1036,13 @@ def test_row_estimate_fires_once_on_real_slow_plan(fixture_loader):
     )
 
 
+def test_row_estimate_time_is_not_more_than_the_query_time(fixture_loader):
+    # The nested loop sits below a Gather and ran in 3 processes at the same time.
+    plan, catalog = fixture_loader("row_estimate_slow")
+    [finding] = run_rules(plan, catalog)
+    assert finding.time_ms <= plan["Execution Time"]
+
+
 @pytest.mark.parametrize("name", ["row_estimate_after_fix", "row_estimate_fixed"])
 def test_row_estimate_silent_after_either_fix(fixture_loader, name):
     plan, catalog = fixture_loader(name)

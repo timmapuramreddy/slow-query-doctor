@@ -52,6 +52,32 @@ def test_parallel_node_time_is_not_multiplied_by_workers():
     assert PlanNode(raw={**raw, "Parallel Aware": False}, depth=0).total_time_ms == 90.0
 
 
+def test_node_time_below_a_gather_is_the_average_per_process():
+    # A nested loop re-ran the Gather 4 times. Each run had 3 processes (leader and 2 workers).
+    plan = {
+        "Node Type": "Gather",
+        "Actual Loops": 4,
+        "Actual Total Time": 50.0,
+        "Plans": [
+            {
+                "Node Type": "Nested Loop",
+                "Actual Loops": 12,
+                "Actual Total Time": 10.0,
+                "Plans": [
+                    {
+                        "Node Type": "Seq Scan",
+                        "Parallel Aware": True,
+                        "Actual Loops": 12,
+                        "Actual Total Time": 5.0,
+                    }
+                ],
+            }
+        ],
+    }
+    times = {n.node_type: n.total_time_ms for n in walk(plan)}
+    assert times == {"Gather": 200.0, "Nested Loop": 40.0, "Seq Scan": 20.0}
+
+
 def test_leading_wildcard_columns_reads_like_and_ilike():
     expr = "(((email)::text ~~ '%42@x'::text) AND (last_name ~~* 'Sm%'::text))"
     assert leading_wildcard_columns(expr, ["email", "last_name"]) == [("email", "%42@x")]
