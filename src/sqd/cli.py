@@ -59,7 +59,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             raise ValueError("--catalog only works with --plan.")
         sql = Path(args.file).read_text()
         with psycopg.connect(db.get_dsn(args.dsn)) as conn:
-            result = db.explain_analyze(conn, sql)
+            result = db.explain_analyze(conn, sql, timeout=args.timeout)
             catalog = db.load_catalog(conn, relations(result))
         hint = "They were not found on the search_path."
     missing = sorted(relations(result) - catalog.tables.keys())
@@ -94,6 +94,13 @@ def positive_int(text: str) -> int:
     return value
 
 
+def non_negative_int(text: str) -> int:
+    value = int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be 0 or more")
+    return value
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
     if not args.fixed and not args.setup:
         raise ValueError("Give a fixed query file, --setup FILE, or both.")
@@ -103,11 +110,19 @@ def cmd_compare(args: argparse.Namespace) -> int:
         if args.setup:
             after = (f"{fixed[0]} + {args.setup}", fixed[1])
             before_t, after_t, setup_ms = compare_with_setup(
-                conn, slow, after, Path(args.setup).read_text(), args.runs, args.warmup
+                conn,
+                slow,
+                after,
+                Path(args.setup).read_text(),
+                args.runs,
+                args.warmup,
+                timeout=args.timeout,
             )
             print(format_comparison(before_t, after_t, args.warmup, (args.setup, setup_ms)))
         else:
-            before_t, after_t = compare_queries(conn, [slow, fixed], args.runs, args.warmup)
+            before_t, after_t = compare_queries(
+                conn, [slow, fixed], args.runs, args.warmup, timeout=args.timeout
+            )
             print(format_comparison(before_t, after_t, args.warmup))
     return 0
 
@@ -119,6 +134,17 @@ def cmd_demo_load(args: argparse.Namespace) -> int:
         db.load_demo(conn, args.scale)
     print("Done.")
     return 0
+
+
+def add_timeout(command: argparse.ArgumentParser, what: str) -> None:
+    command.add_argument(
+        "--timeout",
+        metavar="SECONDS",
+        type=non_negative_int,
+        default=db.DEFAULT_TIMEOUT_S,
+        help=f"{what} (default {db.DEFAULT_TIMEOUT_S}). 0 sets no limit of its own. A shorter "
+        "limit set on the server is kept.",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -144,6 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="table info for --plan, made with `sqd catalog-sql` (without it most rules skip)",
     )
+    add_timeout(check, "stop the EXPLAIN ANALYZE after this many seconds")
     check.set_defaults(func=cmd_check)
 
     catalog_sql = sub.add_parser(
@@ -179,6 +206,11 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument(
         "--warmup", type=int, default=1, help="untimed runs before timing (default 1)"
     )
+    add_timeout(
+        compare,
+        "stop any one run or --setup statement after this many seconds; it is not a limit on "
+        "the whole command",
+    )
     compare.set_defaults(func=cmd_compare)
 
     demo = sub.add_parser("demo", help="demo database commands")
@@ -194,10 +226,43 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_STATEMENT_TIMEOUT = "canceling statement due to statement timeout"
+
+
+def timeout_message(exc: psycopg.errors.QueryCanceled) -> str | None:
+    """Plain words for a statement_timeout cancel: which limit fired and what it stopped.
+
+    None for any other cancel (pg_cancel_backend, Ctrl-C), which gets the usual message.
+    """
+    if exc.diag.message_primary != _STATEMENT_TIMEOUT:
+        return None
+    setup = getattr(exc, "sqd_setup", None)
+    if setup:
+        first_line = " ".join(setup.split())
+        what = f'The --setup statement "{first_line[:60]}{"..." if len(first_line) > 60 else ""}"'
+    else:
+        what = "The query"
+    limit = getattr(exc, "sqd_limit", None)
+    if limit is not None and not limit.server:
+        return (
+            f"{what} ran longer than {limit.ms / 1000:g} s and was stopped. "
+            "Use a larger --timeout to allow more, or --timeout 0 for no limit from sqd."
+        )
+    server = f" ({limit.ms / 1000:g} s)" if limit is not None else ""
+    return (
+        f"{what} ran longer than the statement_timeout{server} set on the server, database, "
+        "role or session, and was stopped. sqd never loosens that limit, so --timeout "
+        "cannot raise it."
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
+    except psycopg.errors.QueryCanceled as exc:
+        print(f"sqd: {timeout_message(exc) or exc}", file=sys.stderr)
+        return 2
     except (ValueError, RuntimeError, OSError, psycopg.Error) as exc:
         print(f"sqd: {exc}", file=sys.stderr)
         return 2
