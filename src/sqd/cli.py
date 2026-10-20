@@ -246,7 +246,7 @@ def timeout_message(exc: psycopg.errors.QueryCanceled) -> str | None:
     if limit is not None and not limit.server:
         return (
             f"{what} ran longer than {limit.ms / 1000:g} s and was stopped. "
-            "Use a larger --timeout to allow more, or --timeout 0 to set no limit."
+            "Use a larger --timeout to allow more, or --timeout 0 for no limit from sqd."
         )
     server = f" ({limit.ms / 1000:g} s)" if limit is not None else ""
     return (

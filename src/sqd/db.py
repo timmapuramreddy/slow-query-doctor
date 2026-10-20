@@ -166,7 +166,7 @@ def ensure_setup(sql: str) -> list[str]:
 class StatementLimit:
     """The statement_timeout in force for a transaction sqd ran, and who set it.
 
-    server is True when a shorter limit was already in force (server, database, role or
+    server is True when a shorter or equal limit was already in force (server, database, role or
     session) and sqd kept it instead of its own.
     """
 
@@ -174,11 +174,12 @@ class StatementLimit:
     server: bool
 
 
-# One round trip: read the limit in force, and set ours unless that one is shorter.
-# A non-zero limit shorter than ours is kept, so sqd never loosens a limit the DBA set.
+# One round trip: read the limit in force, and set ours unless that one is shorter or equal.
+# A non-zero limit up to ours is kept, so sqd never loosens a limit the DBA set, and an error
+# names that limit (raising --timeout would not help).
 _SET_TIMEOUT_SQL = """
 SELECT setting::bigint,
-       CASE WHEN setting::bigint > 0 AND setting::bigint < %(ms)s THEN NULL
+       CASE WHEN setting::bigint > 0 AND setting::bigint <= %(ms)s THEN NULL
             ELSE set_config('statement_timeout', %(limit)s, true) END
 FROM pg_settings WHERE name = 'statement_timeout'
 """

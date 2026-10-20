@@ -63,15 +63,18 @@ def test_session_timeout_comes_back_after_success_and_after_a_stop():
 
 @pytest.mark.integration
 @needs_db
-@pytest.mark.parametrize(("timeout", "expected"), [(0, None), (300, db.StatementLimit(500, True))])
-def test_a_shorter_session_limit_is_kept(timeout, expected):
+@pytest.mark.parametrize(
+    ("timeout", "expected"),
+    [(0, None), (300, db.StatementLimit(1000, True)), (1, db.StatementLimit(1000, True))],
+)
+def test_a_shorter_or_equal_session_limit_is_kept(timeout, expected):
     import psycopg
 
     with psycopg.connect(db.get_dsn()) as conn:
-        _session(conn, "500ms")
+        _session(conn, "1s")
         with pytest.raises(psycopg.errors.QueryCanceled) as caught:
-            db.explain_analyze(conn, "SELECT pg_sleep(1)", timeout=timeout)
-        assert _shown(conn) == "500ms"
+            db.explain_analyze(conn, "SELECT pg_sleep(1.5)", timeout=timeout)
+        assert _shown(conn) == "1s"
     assert caught.value.sqd_limit == expected
 
 
@@ -99,7 +102,7 @@ def test_cli_stops_a_long_query_and_says_which_limit(tmp_path, capsys, monkeypat
     assert cli.main([command[0], "q.sql", *command[1:], "--timeout", "1"]) == 2
     err = capsys.readouterr().err
     assert "sqd: The query ran longer than 1 s and was stopped." in err
-    assert "--timeout 0" in err
+    assert "--timeout 0 for no limit from sqd" in err
 
 
 @pytest.fixture
@@ -141,3 +144,29 @@ def test_setup_stopped_midway_leaves_nothing_and_the_connection_works(courses_lo
         assert conn.execute("SELECT to_regclass('sqd_timeout_probe')").fetchone() == (None,)
         conn.rollback()
     assert caught.value.sqd_setup == "CREATE INDEX ON courses (title)"
+
+
+@pytest.mark.integration
+@needs_db
+def test_query_stopped_after_setup_is_named_as_the_query_and_rolled_back():
+    import psycopg
+
+    from sqd.compare import compare_with_setup
+
+    with psycopg.connect(db.get_dsn()) as conn:
+        _session(conn, "7s")
+        with pytest.raises(psycopg.errors.QueryCanceled) as caught:
+            compare_with_setup(
+                conn,
+                ("before", "SELECT 1"),
+                ("after", "SELECT pg_sleep(2)"),
+                "CREATE INDEX sqd_timeout_probe ON students (last_name)",
+                runs=1,
+                warmup=0,
+                timeout=1,
+            )
+        assert conn.execute("SELECT to_regclass('sqd_timeout_probe')").fetchone() == (None,)
+        conn.rollback()
+        assert _shown(conn) == "7s"
+    assert caught.value.sqd_setup is None
+    assert caught.value.sqd_limit == db.StatementLimit(ms=1000, server=False)
