@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0 - unreleased
+
+### Changed
+
+- `sqd check` and `sqd compare` now stop any single statement that runs longer than 300 s. Before, a slow query ran with no limit. This covers each `EXPLAIN ANALYZE`, each timed or warm-up run, and each `--setup` statement. The limit is per statement, not for the whole command.
+- Change it with `--timeout SECONDS`. `--timeout 0` sets no limit of its own.
+- A shorter `statement_timeout` already set on the server, database, role or session is kept. sqd never loosens it.
+- A stopped statement exits with code 2 and says which limit stopped it, and which `--setup` statement if it was one. The transaction is rolled back, so nothing stays behind.
+- The Python API has a new keyword `timeout` on `explain_analyze`, `compare_queries` and `compare_with_setup`. It defaults to `None`, which leaves `statement_timeout` alone, so code that calls them sees no change.
+
 ## 1.0.0 - 2026-10-14
 
 First release. PostgreSQL only.

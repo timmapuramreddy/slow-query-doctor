@@ -21,6 +21,7 @@ Found 1 problem(s):
 - Fixed rules find the problem, so every answer can be checked. No AI in v1.
 - `sqd check --plan plan.json` reads a plan someone saved on their own database, as JSON or as text `EXPLAIN (ANALYZE, BUFFERS)` output. It never connects to a database. See [Share a slow query](#share-a-slow-query).
 - Only single `SELECT` statements are accepted, and they run in a read-only transaction that is rolled back. `EXPLAIN ANALYZE` really executes the query, so this matters.
+- Each statement is stopped after 300 s. Change it with `--timeout SECONDS`; `--timeout 0` sets no limit of its own. A shorter `statement_timeout` set on the server is kept.
 
 Then prove the fix:
 
@@ -62,6 +63,7 @@ Both queries returned the same 3 row(s).
 - The setup file may only contain `CREATE INDEX`, `CREATE STATISTICS`, `CREATE EXTENSION` and `ANALYZE`. Anything else is refused.
 - The runs can't take turns here, because the index exists only inside that transaction. All runs without it come first. Speedups move between runs (40x to 56x for this example), so run it more than once.
 - While it runs, `CREATE INDEX` blocks writes to that table. It gives up if it waits more than 5 s for a lock. Use a test database, not a busy production one.
+- `--timeout` (default 300 s) applies to each run and each setup statement on its own, not to the whole command. Five runs of a slow query can take five times as long.
 - `sqd compare slow.sql fixed.sql --setup fix.sql` times a rewrite and an index together.
 
 ## Patterns

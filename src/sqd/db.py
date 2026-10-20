@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from importlib import resources
 from typing import Any
 
@@ -12,6 +13,9 @@ import psycopg
 from sqd.catalog import Catalog
 
 DSN_ENV = "SQD_DATABASE_URL"
+
+# Longest a single statement sqd runs (query, EXPLAIN ANALYZE or --setup) may take, in seconds.
+DEFAULT_TIMEOUT_S = 300
 
 _WRITE_WORDS = re.compile(r"\b(insert|update|delete|merge|truncate|alter|drop|create)\b", re.I)
 _DOLLAR_TAG = re.compile(r"\$(?:[a-z_][a-z0-9_]*)?\$", re.I)
@@ -158,14 +162,76 @@ def ensure_setup(sql: str) -> list[str]:
     return statements
 
 
-def explain_analyze(conn: psycopg.Connection, sql: str) -> dict[str, Any]:
-    """Run EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) in a read-only transaction and roll back."""
+@dataclass(frozen=True)
+class StatementLimit:
+    """The statement_timeout in force for a transaction sqd ran, and who set it.
+
+    server is True when a shorter limit was already in force (server, database, role or
+    session) and sqd kept it instead of its own.
+    """
+
+    ms: int
+    server: bool
+
+
+# One round trip: read the limit in force, and set ours unless that one is shorter.
+# A non-zero limit shorter than ours is kept, so sqd never loosens a limit the DBA set.
+_SET_TIMEOUT_SQL = """
+SELECT setting::bigint,
+       CASE WHEN setting::bigint > 0 AND setting::bigint < %(ms)s THEN NULL
+            ELSE set_config('statement_timeout', %(limit)s, true) END
+FROM pg_settings WHERE name = 'statement_timeout'
+"""
+
+
+def set_statement_timeout(cur: psycopg.Cursor, seconds: int | None) -> StatementLimit | None:
+    """Limit each statement in the current transaction to `seconds`, return the limit in force.
+
+    None or 0 sets nothing and returns None. The limit is transaction-local (set_config with
+    is_local), so commit or rollback brings back whatever the session had before.
+    """
+    if not seconds:
+        return None
+    # The unit matters: a bare number would be milliseconds.
+    cur.execute(_SET_TIMEOUT_SQL, {"ms": seconds * 1000, "limit": f"{seconds}s"})
+    row = cur.fetchone()
+    if row is None:
+        raise RuntimeError("pg_settings has no statement_timeout row.")
+    server_ms, ours = row
+    if ours is None:
+        return StatementLimit(ms=server_ms, server=True)
+    return StatementLimit(ms=seconds * 1000, server=False)
+
+
+def note_cancel(
+    exc: psycopg.errors.QueryCanceled, limit: StatementLimit | None, setup: str | None = None
+) -> None:
+    """Record on a cancel error the limit sqd had in force and the --setup statement, if any.
+
+    The error keeps its type; the CLI reads these to say which limit stopped what.
+    """
+    exc.sqd_limit = limit  # type: ignore[attr-defined]
+    exc.sqd_setup = setup  # type: ignore[attr-defined]
+
+
+def explain_analyze(
+    conn: psycopg.Connection, sql: str, *, timeout: int | None = None
+) -> dict[str, Any]:
+    """Run EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) in a read-only transaction and roll back.
+
+    timeout limits the EXPLAIN to that many seconds; None or 0 leaves statement_timeout alone.
+    """
     query = ensure_select(sql)
+    limit = None
     try:
         with conn.cursor() as cur:
             cur.execute("BEGIN READ ONLY")
+            limit = set_statement_timeout(cur, timeout)
             cur.execute(f"EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) {query}")
             row = cur.fetchone()
+    except psycopg.errors.QueryCanceled as exc:
+        note_cancel(exc, limit)
+        raise
     finally:
         conn.rollback()
     if row is None:

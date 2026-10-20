@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slow-query-doctor"
-version = "1.0.0"
+version = "1.1.0"
 description = "Explains why a SQL query is slow in plain words and proves the fix with timings."
 readme = "README.md"
 license = "MIT"

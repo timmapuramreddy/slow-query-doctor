@@ -54,12 +54,22 @@ def _timed(cur: psycopg.Cursor, query: str) -> tuple[float, list[tuple[Any, ...]
     return (time.perf_counter() - start) * 1000, rows
 
 
-def run_once(conn: psycopg.Connection, query: str) -> tuple[float, list[tuple[Any, ...]]]:
-    """Run a checked SELECT in a read-only transaction, roll back, return (ms, rows)."""
+def run_once(
+    conn: psycopg.Connection, query: str, *, timeout: int | None = None
+) -> tuple[float, list[tuple[Any, ...]]]:
+    """Run a checked SELECT in a read-only transaction, roll back, return (ms, rows).
+
+    timeout limits the query to that many seconds; None or 0 leaves statement_timeout alone.
+    """
+    limit = None
     try:
         with conn.cursor() as cur:
             cur.execute("BEGIN READ ONLY")
+            limit = db.set_statement_timeout(cur, timeout)
             return _timed(cur, query)
+    except psycopg.errors.QueryCanceled as exc:
+        db.note_cancel(exc, limit)
+        raise
     finally:
         conn.rollback()
 
@@ -84,10 +94,13 @@ def compare_queries(
     queries: list[tuple[str, str]],
     runs: int = 5,
     warmup: int = 1,
+    *,
+    timeout: int | None = None,
 ) -> list[Timing]:
     """Time each (label, sql) query `runs` times after `warmup` untimed runs.
 
     Runs alternate between the queries so cache warm-up or background load hits both alike.
+    timeout limits each run to that many seconds; None or 0 leaves statement_timeout alone.
     """
     if runs < 1 or warmup < 0:
         raise ValueError("runs must be at least 1 and warmup at least 0.")
@@ -97,7 +110,7 @@ def compare_queries(
 
     for n in range(warmup + runs):
         for i, query in enumerate(checked):
-            elapsed_ms, rows = run_once(conn, query)
+            elapsed_ms, rows = run_once(conn, query, timeout=timeout)
             if n == 0:
                 results[i] = rows
             if n >= warmup:
@@ -121,6 +134,8 @@ def compare_with_setup(
     setup_sql: str,
     runs: int = 5,
     warmup: int = 1,
+    *,
+    timeout: int | None = None,
 ) -> tuple[Timing, Timing, float]:
     """Time `before` on the database as it is, then `after` with the setup applied.
 
@@ -129,22 +144,32 @@ def compare_with_setup(
     Runs cannot take turns, because the index or statistics exist only inside that
     transaction: all `before` runs come first.
     While it runs, CREATE INDEX blocks writes to the table. Returns (before, after, setup ms).
+    timeout limits each run and each setup statement to that many seconds; None or 0 leaves
+    statement_timeout alone.
     """
     if runs < 1 or warmup < 0:
         raise ValueError("runs must be at least 1 and warmup at least 0.")
     before_sql, after_sql = db.ensure_select(before[1]), db.ensure_select(after[1])
     setup = db.ensure_setup(setup_sql)
 
-    before_timing = _timing(before[0], lambda: run_once(conn, before_sql), runs, warmup)
+    before_timing = _timing(
+        before[0], lambda: run_once(conn, before_sql, timeout=timeout), runs, warmup
+    )
+    limit, running = None, None
     try:
         with conn.cursor() as cur:
+            limit = db.set_statement_timeout(cur, timeout)
             cur.execute(f"SET LOCAL lock_timeout = '{SETUP_LOCK_TIMEOUT}'")
             start = time.perf_counter()
-            for statement in setup:
-                cur.execute(statement)
+            for running in setup:
+                cur.execute(running)
+            running = None
             setup_ms = (time.perf_counter() - start) * 1000
             cur.execute("SET LOCAL transaction_read_only = on")
             after_timing = _timing(after[0], lambda: _timed(cur, after_sql), runs, warmup)
+    except psycopg.errors.QueryCanceled as exc:
+        db.note_cancel(exc, limit, running)
+        raise
     finally:
         conn.rollback()
     return before_timing, after_timing, setup_ms
