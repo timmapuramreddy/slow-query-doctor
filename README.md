@@ -154,6 +154,8 @@ black --check src tests
 pytest                            # the database test is skipped if SQD_DATABASE_URL is not set
 ```
 
+Open pull requests against `main`. Keep each PR to one change, and run the three checks above locally before you push.
+
 ## License
 
 MIT
